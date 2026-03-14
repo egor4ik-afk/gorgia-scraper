@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  scraper:
+    build: .
+    container_name: product-scraper
+    restart: "no"          # запускается по cron, не как демон
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs   # логи доступны на хосте
+    networks:
+      - scraper-net
+
+  # Планировщик — запускает scraper каждый день в 03:00
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: scraper-scheduler
+    restart: unless-stopped
+    depends_on:
+      - scraper
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scheduler.ini:/etc/ofelia/config.ini
+    networks:
+      - scraper-net
+
+networks:
+  scraper-net:
+    driver: bridge
