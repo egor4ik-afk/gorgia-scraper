@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
+main.py
 Gorgia.ge Product Scraper Agent
-Парсит gorgia.ge, обновляет Neon PostgreSQL,
-загружает фото в Vercel Blob, шлёт отчёт в Telegram.
+  --full      полный парсинг всего сайта (первый запуск)
+  --update    только ежедневное обновление цены/наличия
+  (без флагов: полный парсинг)
 """
 
 import asyncio
 import logging
+import sys
 from datetime import datetime
 
 from config.settings import settings
@@ -26,61 +29,71 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 
-async def main():
-    logger.info("🚀 Запуск агента gorgia.ge")
-    start = datetime.now()
-
+async def run_full_scrape():
+    """Полный обход всего сайта gorgia.ge."""
+    logger.info("🚀 Запуск полного парсинга gorgia.ge")
+    start   = datetime.now()
+    report  = UpdateReport()
     notifier = TelegramNotifier(
         token=settings.TELEGRAM_BOT_TOKEN,
         chat_id=settings.TELEGRAM_CHAT_ID,
     )
 
-    report = UpdateReport()
-
     try:
         await init_db()
 
-        # Определяем список категорий
+        # Если заданы конкретные URL — используем их
+        # Иначе full_site=True: автоматически обходим весь sitemap
         if settings.GORGIA_CATEGORY_URLS:
-            categories = [
-                (url.strip(), "", "")
-                for url in settings.GORGIA_CATEGORY_URLS.split(",")
-                if url.strip()
-            ]
+            for url in [u.strip() for u in settings.GORGIA_CATEGORY_URLS.split(",") if u.strip()]:
+                try:
+                    scraper  = GorgiaScraper(category_url=url)
+                    products = await scraper.scrape()
+                    if products:
+                        ins, upd = await save_to_db(products)
+                        report.total_scraped    += len(products)
+                        report.new_products     += ins
+                        report.updated_products += upd
+                        report.images_uploaded  += sum(len(p.image_urls_blob) for p in products)
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    msg = f"Ошибка категории {url}: {e}"
+                    logger.error(msg)
+                    report.errors.append(msg)
+        elif GORGIA_CATEGORIES:
+            for cat_url, category_ka, sub_category_ka in GORGIA_CATEGORIES:
+                try:
+                    scraper  = GorgiaScraper(
+                        category_url=cat_url,
+                        category_ka=category_ka,
+                        sub_category_ka=sub_category_ka,
+                    )
+                    products = await scraper.scrape()
+                    if products:
+                        ins, upd = await save_to_db(products)
+                        report.total_scraped    += len(products)
+                        report.new_products     += ins
+                        report.updated_products += upd
+                        report.images_uploaded  += sum(len(p.image_urls_blob) for p in products)
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    msg = f"Ошибка {cat_url}: {e}"
+                    logger.error(msg)
+                    report.errors.append(msg)
         else:
-            categories = GORGIA_CATEGORIES
+            # Полный обход через sitemap
+            scraper  = GorgiaScraper(full_site=True)
+            products = await scraper.scrape()
+            if products:
+                ins, upd = await save_to_db(products)
+                report.total_scraped    = len(products)
+                report.new_products     = ins
+                report.updated_products = upd
+                report.images_uploaded  = sum(len(p.image_urls_blob) for p in products)
 
-        logger.info(f"Категорий для парсинга: {len(categories)}")
-
-        for cat_url, category, sub_category in categories:
-            try:
-                scraper = GorgiaScraper(
-                    category_url=cat_url,
-                    category=category,
-                    sub_category=sub_category,
-                )
-                products = await scraper.scrape()
-
-                if products:
-                    inserted, updated = await save_to_db(products)
-                    report.total_scraped  += len(products)
-                    report.new_products   += inserted
-                    report.updated_products += updated
-
-                    # Считаем изменения цен и наличия
-                    for p in products:
-                        report.images_uploaded += len(p.image_urls_blob)
-
-                await asyncio.sleep(2)
-
-            except Exception as e:
-                msg = f"Ошибка категории {cat_url}: {e}"
-                logger.error(msg)
-                report.errors.append(msg)
-
-        elapsed = (datetime.now() - start).seconds
+        elapsed = int((datetime.now() - start).total_seconds())
         await notifier.send_report(report, elapsed)
-        logger.info(f"✅ Готово за {elapsed}с")
+        logger.info(f"✅ Парсинг завершён за {elapsed}с | +{report.new_products} ~{report.updated_products}")
 
     except Exception as e:
         logger.exception(f"❌ Критическая ошибка: {e}")
@@ -88,5 +101,14 @@ async def main():
         raise
 
 
+async def run_update():
+    """Только ежедневное обновление цены/наличия."""
+    from updater import run_daily_update
+    await run_daily_update()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    if "--update" in sys.argv:
+        asyncio.run(run_update())
+    else:
+        asyncio.run(run_full_scrape())

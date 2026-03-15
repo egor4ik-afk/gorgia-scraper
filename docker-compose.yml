@@ -1,23 +1,52 @@
 version: "3.9"
 
 services:
-  scraper:
+  # ── Webhook-сервер (постоянно работает, принимает команды от админки)
+  webhook:
     build: .
-    container_name: product-scraper
-    restart: "no"          # запускается по cron, не как демон
+    container_name: gorgia-webhook
+    restart: unless-stopped
+    command: python webhook_server.py
     env_file: .env
+    ports:
+      - "8080:8080"     # или закрой за nginx/reverse-proxy
     volumes:
-      - ./logs:/app/logs   # логи доступны на хосте
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - scraper-net
 
-  # Планировщик — запускает scraper каждый день в 03:00
+  # ── Полный парсинг (по расписанию или через webhook)
+  scraper:
+    build: .
+    container_name: gorgia-scraper
+    restart: "no"
+    command: python main.py
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - scraper-net
+
+  # ── Ежедневный апдейтер (по расписанию или через webhook)
+  updater:
+    build: .
+    container_name: gorgia-updater
+    restart: "no"
+    command: python main.py --update
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - scraper-net
+
+  # ── Планировщик Ofelia
+  # Полный парсинг — каждое воскресенье в 02:00
+  # Ежедневный апдейт — каждый день в 06:00
   scheduler:
     image: mcuadros/ofelia:latest
-    container_name: scraper-scheduler
+    container_name: gorgia-scheduler
     restart: unless-stopped
-    depends_on:
-      - scraper
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./scheduler.ini:/etc/ofelia/config.ini
