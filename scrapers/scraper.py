@@ -338,37 +338,49 @@ def get_done_urls(conn) -> set[str]:
 
 
 def upsert_product(conn, p: dict):
-    sql = """
-    INSERT INTO products (
-        external_id, source, source_url,
-        name, name_ka, name_ru, name_en,
-        availability_ka, availability_ru,
-        category, category_ru,
-        sub_category, sub_category_ru,
-        price, currency, in_stock,
-        image_url, images
-    ) VALUES (
-        %(external_id)s, %(source)s, %(source_url)s,
-        %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
-        %(availability_ka)s, %(availability_ru)s,
-        %(category)s, %(category_ru)s,
-        %(sub_category)s, %(sub_category_ru)s,
-        %(price)s, %(currency)s, %(in_stock)s,
-        %(image_url)s, %(images)s
-    )
-    ON CONFLICT (external_id, source) DO UPDATE SET
-        price           = EXCLUDED.price,
-        in_stock        = EXCLUDED.in_stock,
-        availability_ka = EXCLUDED.availability_ka,
-        availability_ru = EXCLUDED.availability_ru,
-        image_url       = COALESCE(EXCLUDED.image_url, products.image_url),
-        images          = COALESCE(EXCLUDED.images, products.images),
-        updated_at      = NOW()
-    """
+    # Проверяем есть ли уже такой товар
     with conn.cursor() as cur:
-        cur.execute(sql, p)
-    conn.commit()
+        cur.execute(
+            "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
+            [p["external_id"]]
+        )
+        existing = cur.fetchone()
 
+    if existing:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE products SET
+                    price           = %(price)s,
+                    in_stock        = %(in_stock)s,
+                    availability_ka = %(availability_ka)s,
+                    availability_ru = %(availability_ru)s,
+                    image_url       = COALESCE(%(image_url)s, image_url),
+                    images          = COALESCE(%(images)s, images),
+                    updated_at      = NOW()
+                WHERE external_id = %(external_id)s AND source = 'gorgia'
+            """, p)
+    else:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO products (
+                    external_id, source, source_url,
+                    name, name_ka, name_ru, name_en,
+                    availability_ka, availability_ru,
+                    category, category_ru,
+                    sub_category, sub_category_ru,
+                    price, currency, in_stock,
+                    image_url, images
+                ) VALUES (
+                    %(external_id)s, %(source)s, %(source_url)s,
+                    %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
+                    %(availability_ka)s, %(availability_ru)s,
+                    %(category)s, %(category_ru)s,
+                    %(sub_category)s, %(sub_category_ru)s,
+                    %(price)s, %(currency)s, %(in_stock)s,
+                    %(image_url)s, %(images)s
+                )
+            """, p)
+    conn.commit()
 
 # ─────────────────────────────────────────────
 # Main
