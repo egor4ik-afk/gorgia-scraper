@@ -16,7 +16,9 @@ import psycopg2
 
 DATABASE_URL      = os.environ["DATABASE_URL"]
 VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "") or os.environ.get("VERCEL_BLOB_TOKEN", "")
-GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
+YANDEX_API_KEY    = os.environ.get("YANDEX_API_KEY", "")
+YANDEX_FOLDER_ID  = os.environ.get("YANDEX_FOLDER_ID", "b1gcr5m4ptniag2qpsqm")
+YANDEX_MODEL      = os.environ.get("YANDEX_MODEL", "yandexgpt-5.1/latest")
 REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
 TG_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT           = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -74,38 +76,50 @@ TRANS = {
 def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
                            category_ru: str, sub_category_ru: str) -> dict:
     """
-    Генерирует описание товара на 3 языках через Gemini REST API (без SDK).
+    Генерирует описание товара на 3 языках через YandexGPT (openai-совместимый API).
     Возвращает {'ru': str, 'en': str, 'ka': str} или пустой dict при ошибке.
     """
-    if not GEMINI_API_KEY:
+    if not YANDEX_API_KEY:
+        return {}
+
+    try:
+        import openai
+    except ImportError:
+        print("  ⚠️ openai не установлен: pip install openai")
         return {}
 
     import urllib.request
     name = name_ru or name_en or name_ka
     cat  = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
 
-    prompt = f"""You are a product copywriter for an online store in Georgia (country).
-Write a short, natural product description (2-3 sentences, max 300 chars each) for:
+    prompt = f"""Ты копирайтер интернет-магазина в Грузии.
+Напиши короткое описание товара (2-3 предложения, макс 300 символов каждое) для:
 
-Product: {name}
-Category: {cat}
+Товар: {name}
+Категория: {cat}
 
-Return ONLY a valid JSON object with exactly these keys:
+Верни ТОЛЬКО валидный JSON объект с ключами:
 {{
   "ru": "описание на русском",
   "en": "description in english",
   "ka": "აღწერა ქართულად"
 }}
 
-No markdown, no extra text, just the JSON."""
+Без markdown, без лишнего текста, только JSON."""
 
     try:
-        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-        body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode()
-        req  = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        client = openai.OpenAI(
+            api_key=YANDEX_API_KEY,
+            base_url="https://ai.api.cloud.yandex.net/v1",
+        )
+        response = client.responses.create(
+            model=f"gpt://{YANDEX_FOLDER_ID}/{YANDEX_MODEL}",
+            temperature=0.3,
+            instructions="Ты копирайтер товаров для интернет-магазина.",
+            input=prompt,
+            max_output_tokens=500,
+        )
+        text = (response.output_text or "").strip()
         text = re.sub(r"```json\s*|\s*```", "", text).strip()
         parsed = json.loads(text)
         return {
@@ -114,7 +128,7 @@ No markdown, no extra text, just the JSON."""
             "ka": str(parsed.get("ka", ""))[:500],
         }
     except Exception as e:
-        print(f"  ⚠️ Gemini error: {e}")
+        print(f"  ⚠️ YandexGPT error: {e}")
         return {}
 
 
@@ -127,8 +141,8 @@ def generate_descriptions_batch(products: list) -> list:
     Генерирует описания батчами по BATCH_SIZE.
     Логирует каждый товар и ошибки, отправляет итог в TG.
     """
-    if not GEMINI_API_KEY:
-        print("  ℹ️ GEMINI_API_KEY не задан, описания пропускаем")
+    if not YANDEX_API_KEY:
+        print("  ℹ️ YANDEX_API_KEY не задан, описания пропускаем")
         return products
 
     total   = len(products)
@@ -656,8 +670,57 @@ def main_single():
     tg_notify(msg)
 
 
+
+
+
+def main_test():
+    """Тест генерации описания: 1 товар без парсинга и без сохранения в БД."""
+    print("🧪 ТЕСТ GEMINI — 1 товар\n")
+
+    if not YANDEX_API_KEY:
+        print("❌ YANDEX_API_KEY не задан")
+        return
+
+    # Тестовый товар — можно менять
+    test_product = {
+        "name_ru":         "Журнальный столик 118х78 цвет дуб ЛАКК",
+        "name_en":         "Coffee table 118x78 oak color LACK",
+        "name_ka":         "ყავის მაგიდა 118x78 მუხისფერი LACK",
+        "category_ru":     "IKEA",
+        "sub_category_ru": "Столы",
+    }
+
+    print(f"  Товар: {test_product['name_ru']}")
+    print(f"  Категория: {test_product['category_ru']} / {test_product['sub_category_ru']}\n")
+
+    descs = generate_descriptions(
+        test_product["name_ru"],
+        test_product["name_en"],
+        test_product["name_ka"],
+        test_product["category_ru"],
+        test_product["sub_category_ru"],
+    )
+
+    if descs and descs.get("ru"):
+        print("✅ Описание сгенерировано:")
+        print(f"  RU: {descs['ru']}")
+        print(f"  EN: {descs['en']}")
+        print(f"  KA: {descs['ka']}")
+        tg_notify(
+            f"🧪 *Тест Gemini*\n\n"
+            f"*{test_product['name_ru']}*\n\n"
+            f"RU: {descs['ru']}\n\n"
+            f"EN: {descs['en']}\n\n"
+            f"KA: {descs['ka']}"
+        )
+    else:
+        print("❌ Описание не сгенерировано — проверь логи выше")
+
+
 if __name__ == "__main__":
-    if "--single" in sys.argv:
+    if "--test" in sys.argv:
+        main_test()
+    elif "--single" in sys.argv:
         main_single()
     else:
         main()
