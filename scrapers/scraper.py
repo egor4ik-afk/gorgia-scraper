@@ -1,31 +1,22 @@
 #!/usr/bin/env python3
 """
-scraper.py — Gorgia.ge category scraper
-- Обходит список категорий (все страницы пагинации)
-- Переводит KA → RU и KA → EN
-- Загружает фото в Vercel Blob
-- Сохраняет в Neon PostgreSQL
+scrapers/scraper.py — Gorgia.ge category scraper
 """
 
 import os
 import re
 import json
+import sys
 import time
-import base64
 import hashlib
 import urllib.parse
 import requests
-from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString
 import psycopg2
-import psycopg2.extras
 
-# ─────────────────────────────────────────────
-# Настройки из переменных окружения
-# ─────────────────────────────────────────────
-DATABASE_URL        = os.environ["DATABASE_URL"]
-VERCEL_BLOB_TOKEN   = os.environ.get("VERCEL_BLOB_TOKEN", "")
-REQUEST_DELAY       = float(os.environ.get("REQUEST_DELAY", "1.5"))
+DATABASE_URL      = os.environ["DATABASE_URL"]
+VERCEL_BLOB_TOKEN = os.environ.get("VERCEL_BLOB_TOKEN", "")
+REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
 
 BASE_URL = "https://gorgia.ge"
 HEADERS  = {
@@ -34,59 +25,42 @@ HEADERS  = {
     "Accept-Language": "ka,ru;q=0.9,en;q=0.8",
 }
 
-# ─────────────────────────────────────────────
-# Список категорий gorgia.ge
-# Формат: (url, category_ru, sub_category_ru)
-# ─────────────────────────────────────────────
 CATEGORIES = [
-    # IKEA
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-magidebi-da-merxebi/",       "IKEA", "Столы"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-stulebida-skamebi/",          "IKEA", "Стулья"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-karebiani-satumebi/",         "IKEA", "Шкафы"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",             "IKEA", "Гостиная"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",              "IKEA", "Спальня"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/",                               "IKEA", "Освещение"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulosaTvis/",                       "IKEA", "Кухня"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-abazanisaTvis/",                          "IKEA", "Ванная"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saTamaSoebi-da-bavSvTa-aveji/",           "IKEA", "Детская"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-tekstili/",                               "IKEA", "Текстиль"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-dekoracia/",                              "IKEA", "Декор"),
-
-    # Климатическое оборудование
-    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicionerebi/",                             "Климатическое оборудование", "Кондиционеры"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/saventilacio-sistemebi/",                     "Климатическое оборудование", "Вентиляция"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/gamaTbobeli-aparatebi/",                      "Климатическое оборудование", "Обогреватели"),
-
-    # Товары для дома
-    ("https://gorgia.ge/ka/sayofacxovrebo/samzareulosaTvis/",                              "Товары для дома", "Кухня"),
-    ("https://gorgia.ge/ka/sayofacxovrebo/abazanisaTvis/",                                 "Товары для дома", "Ванная"),
-    ("https://gorgia.ge/ka/sayofacxovrebo/dasufTaveba/",                                   "Товары для дома", "Уборка"),
-    ("https://gorgia.ge/ka/sayofacxovrebo/tekstili/",                                      "Товары для дома", "Текстиль"),
-
-    # Сад и огород
-    ("https://gorgia.ge/ka/baRi-da-aivani/",                                               "Сад и огород", ""),
-
-    # Туризм и отдых
-    ("https://gorgia.ge/ka/turizmi-da-dasveneba/",                                         "Туризм и отдых", ""),
-
-    # Детские товары
-    ("https://gorgia.ge/ka/bavSvTa-tovarebi/",                                             "Детские товары", ""),
-
-    # Инструменты
-    ("https://gorgia.ge/ka/instrumentebi/",                                                "Инструменты", ""),
-
-    # Электроника
-    ("https://gorgia.ge/ka/eleqtronika/",                                                  "Электроника", ""),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-magidebi-da-merxebi/",   "IKEA", "Столы"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-stulebida-skamebi/",      "IKEA", "Стулья"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-karebiani-satumebi/",     "IKEA", "Шкафы"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",         "IKEA", "Гостиная"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",          "IKEA", "Спальня"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/",                           "IKEA", "Освещение"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulosaTvis/",                   "IKEA", "Кухня"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-abazanisaTvis/",                      "IKEA", "Ванная"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saTamaSoebi-da-bavSvTa-aveji/",       "IKEA", "Детская"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-tekstili/",                           "IKEA", "Текстиль"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-dekoracia/",                          "IKEA", "Декор"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicionerebi/",                         "Климатическое оборудование", "Кондиционеры"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/saventilacio-sistemebi/",                 "Климатическое оборудование", "Вентиляция"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamaTbobeli/",                      "Климатическое оборудование", "Водонагреватели"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kolektorebi/",                            "Климатическое оборудование", "Коллекторы"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/gamaTbobeli-aparatebi/",                  "Климатическое оборудование", "Обогреватели"),
+    ("https://gorgia.ge/ka/avejis-maRazia/magidebidamerxebi/",                         "Мебель", "Столы"),
+    ("https://gorgia.ge/ka/avejis-maRazia/skrebi/",                                    "Мебель", "Стулья"),
+    ("https://gorgia.ge/ka/avejis-maRazia/vesalkebi/",                                 "Мебель", "Вешалки"),
+    ("https://gorgia.ge/ka/avejis-maRazia/tumbo/",                                     "Мебель", "Тумбочки"),
+    ("https://gorgia.ge/ka/avejis-maRazia/quchis-aveji/",                              "Мебель", "Уличная мебель"),
+    ("https://gorgia.ge/ka/avejis-maRazia/bavSvTa-aveji/",                             "Мебель", "Детская мебель"),
+    ("https://gorgia.ge/ka/ganateba/magidis-naTurebi/",                                "Освещение", "Настольные лампы"),
+    ("https://gorgia.ge/ka/santeknika/smesitelebi/",                                   "Сантехника", "Смесители"),
+    ("https://gorgia.ge/ka/santeknika/rakovina/",                                      "Сантехника", "Раковины"),
+    ("https://gorgia.ge/ka/baRi-da-aivani/",                                           "Сад", ""),
+    ("https://gorgia.ge/ka/turizmi-da-dasveneba/",                                     "Туризм", ""),
+    ("https://gorgia.ge/ka/saTamaSoebi/",                                              "Игрушки", ""),
+    ("https://gorgia.ge/ka/cxovelebisTvis/",                                           "Товары для животных", ""),
 ]
 
 
-# ─────────────────────────────────────────────
-# Утилиты
-# ─────────────────────────────────────────────
-
 def make_external_id(url: str) -> str:
-    path = urllib.parse.urlparse(url).path.strip("/")
-    slug = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)[:80]
+    path  = urllib.parse.urlparse(url).path.strip("/")
+    slug  = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)[:80]
     short = hashlib.md5(path.encode()).hexdigest()[:6]
     return f"{slug}_{short}"
 
@@ -103,7 +77,7 @@ def to_webp(url: str) -> str:
     )
 
 
-def get_soup(url: str, retries=3) -> BeautifulSoup | None:
+def get_soup(url: str, retries=3):
     for attempt in range(retries):
         try:
             r = requests.get(url, headers=HEADERS, timeout=25)
@@ -113,14 +87,10 @@ def get_soup(url: str, retries=3) -> BeautifulSoup | None:
             return BeautifulSoup(r.text, "html.parser")
         except Exception as e:
             wait = 3 * (attempt + 1)
-            print(f"  ⚠️ [{attempt+1}/{retries}] {url}: {e}. Retry in {wait}s…")
+            print(f"  ⚠️ [{attempt+1}/{retries}] {e}. Retry in {wait}s…")
             time.sleep(wait)
     return None
 
-
-# ─────────────────────────────────────────────
-# Перевод
-# ─────────────────────────────────────────────
 
 def translate(text: str, target: str = "ru") -> str:
     if not text or not text.strip():
@@ -138,20 +108,14 @@ def translate(text: str, target: str = "ru") -> str:
     return text
 
 
-# ─────────────────────────────────────────────
-# Vercel Blob
-# ─────────────────────────────────────────────
-
-def upload_to_blob(img_url: str, blob_path: str) -> str | None:
+def upload_to_blob(img_url: str, blob_path: str) -> str:
     if not VERCEL_BLOB_TOKEN:
-        return img_url  # fallback — оригинальный URL
+        return img_url
     try:
         r = requests.get(img_url, headers=HEADERS, stream=True, timeout=25)
         if r.status_code != 200:
-            return None
-        content = r.content
+            return img_url
         ctype = r.headers.get("Content-Type", "image/webp")
-
         res = requests.put(
             f"https://blob.vercel-storage.com/{blob_path}",
             headers={
@@ -159,22 +123,18 @@ def upload_to_blob(img_url: str, blob_path: str) -> str | None:
                 "Content-Type": ctype,
                 "x-content-type": ctype,
             },
-            data=content,
+            data=r.content,
             timeout=40,
         )
         if res.status_code in (200, 201):
-            return res.json().get("url")
+            return res.json().get("url", img_url)
         print(f"  ⚠️ Blob {res.status_code}: {res.text[:100]}")
     except Exception as e:
-        print(f"  ❌ Blob upload: {e}")
-    return None
+        print(f"  ❌ Blob: {e}")
+    return img_url
 
 
-# ─────────────────────────────────────────────
-# Парсинг карточки
-# ─────────────────────────────────────────────
-
-def parse_price(card) -> float | None:
+def parse_price(card):
     tag = card.select_one(".ty-price-num")
     if not tag:
         return None
@@ -195,7 +155,7 @@ def parse_price(card) -> float | None:
         return None
 
 
-def parse_availability(card) -> tuple[str, bool]:
+def parse_availability(card):
     tag = card.select_one(".ty-qty-in-stock")
     if not tag:
         return "", False
@@ -209,7 +169,7 @@ def parse_availability(card) -> tuple[str, bool]:
     return text, False
 
 
-def get_image_urls(card) -> list[str]:
+def get_image_urls(card):
     urls, seen = [], set()
 
     def add(u):
@@ -234,11 +194,7 @@ def get_image_urls(card) -> list[str]:
     return urls
 
 
-# ─────────────────────────────────────────────
-# Обход категории (все страницы)
-# ─────────────────────────────────────────────
-
-def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list[dict]:
+def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list:
     products = []
     page = 1
 
@@ -269,52 +225,45 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             image_urls  = get_image_urls(card)
             external_id = make_external_id(product_url)
 
-            # Переводы
-            name_ru = translate(name_ka, "ru")
-            name_en = translate(name_ka, "en")
+            name_ru  = translate(name_ka, "ru")
+            name_en  = translate(name_ka, "en")
             avail_ru = translate(avail_ka, "ru") if avail_ka else ""
 
-            # Загрузка фото в Vercel Blob
             uploaded = []
             if in_stock:
                 for idx, img_url in enumerate(image_urls[:10]):
                     ext  = "webp" if "webp" in img_url else "jpg"
                     path = f"gorgia/{external_id}/{idx}.{ext}"
-                    result = upload_to_blob(img_url, path)
-                    uploaded.append(result or img_url)
+                    uploaded.append(upload_to_blob(img_url, path))
                     time.sleep(0.3)
             else:
-                uploaded = image_urls  # fallback для не в наличии
-
-            main_image = uploaded[0] if uploaded else None
-            images     = uploaded
+                uploaded = image_urls
 
             products.append({
-                "external_id":    external_id,
-                "source":         "gorgia",
-                "source_url":     product_url,
-                "name":           name_ru or name_ka,
-                "name_ka":        name_ka,
-                "name_ru":        name_ru,
-                "name_en":        name_en,
+                "external_id":     external_id,
+                "source":          "gorgia",
+                "source_url":      product_url,
+                "name":            name_ru or name_ka,
+                "name_ka":         name_ka,
+                "name_ru":         name_ru,
+                "name_en":         name_en,
                 "availability_ka": avail_ka,
                 "availability_ru": avail_ru,
-                "category":       category_ru,
-                "category_ru":    category_ru,
-                "sub_category":   sub_category_ru,
+                "category":        category_ru,
+                "category_ru":     category_ru,
+                "sub_category":    sub_category_ru,
                 "sub_category_ru": sub_category_ru,
-                "price":          price,
-                "currency":       "GEL",
-                "in_stock":       in_stock,
-                "image_url":      main_image,
-                "images":         json.dumps(images),
+                "price":           price,
+                "currency":        "GEL",
+                "in_stock":        in_stock,
+                "image_url":       uploaded[0] if uploaded else None,
+                "images":          json.dumps(uploaded),
             })
 
             flag = "✅" if in_stock else "❌"
-            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(images)} фото")
+            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото")
             time.sleep(REQUEST_DELAY)
 
-        # Проверяем следующую страницу
         next_btn = soup.select_one(
             ".ty-pagination__next:not(.ty-pagination__disabled), .ty-pagination__next a"
         )
@@ -327,100 +276,98 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
     return products
 
 
-# ─────────────────────────────────────────────
-# База данных
-# ─────────────────────────────────────────────
-
-def get_done_urls(conn) -> set[str]:
+def get_done_urls(conn) -> set:
     with conn.cursor() as cur:
         cur.execute("SELECT source_url FROM products WHERE source = 'gorgia' AND source_url IS NOT NULL")
         return {row[0] for row in cur.fetchall()}
 
 
 def upsert_product(conn, p: dict):
-    sql = """
-    INSERT INTO products (
-        external_id, source, source_url,
-        name, name_ka, name_ru, name_en,
-        availability_ka, availability_ru,
-        category, category_ru,
-        sub_category, sub_category_ru,
-        price, currency, in_stock,
-        image_url, images
-    ) VALUES (
-        %(external_id)s, %(source)s, %(source_url)s,
-        %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
-        %(availability_ka)s, %(availability_ru)s,
-        %(category)s, %(category_ru)s,
-        %(sub_category)s, %(sub_category_ru)s,
-        %(price)s, %(currency)s, %(in_stock)s,
-        %(image_url)s, %(images)s
-    )
-    ON CONFLICT (external_id, source) DO UPDATE SET
-        price           = EXCLUDED.price,
-        in_stock        = EXCLUDED.in_stock,
-        availability_ka = EXCLUDED.availability_ka,
-        availability_ru = EXCLUDED.availability_ru,
-        image_url       = COALESCE(EXCLUDED.image_url, products.image_url),
-        images          = COALESCE(EXCLUDED.images, products.images),
-        updated_at      = NOW()
-    """
     with conn.cursor() as cur:
-        cur.execute(sql, p)
+        cur.execute(
+            "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
+            [p["external_id"]]
+        )
+        existing = cur.fetchone()
+
+    if existing:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE products SET
+                    price           = %(price)s,
+                    in_stock        = %(in_stock)s,
+                    availability_ka = %(availability_ka)s,
+                    availability_ru = %(availability_ru)s,
+                    image_url       = COALESCE(%(image_url)s, image_url),
+                    images          = COALESCE(%(images)s::jsonb, images),
+                    updated_at      = NOW()
+                WHERE external_id = %(external_id)s AND source = 'gorgia'
+            """, p)
+    else:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO products (
+                    external_id, source, source_url,
+                    name, name_ka, name_ru, name_en,
+                    availability_ka, availability_ru,
+                    category, category_ru,
+                    sub_category, sub_category_ru,
+                    price, currency, in_stock,
+                    image_url, images
+                ) VALUES (
+                    %(external_id)s, %(source)s, %(source_url)s,
+                    %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
+                    %(availability_ka)s, %(availability_ru)s,
+                    %(category)s, %(category_ru)s,
+                    %(sub_category)s, %(sub_category_ru)s,
+                    %(price)s, %(currency)s, %(in_stock)s,
+                    %(image_url)s, %(images)s::jsonb
+                )
+            """, p)
     conn.commit()
 
 
-# ─────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────
+def save_products(products: list):
+    conn = psycopg2.connect(DATABASE_URL)
+    done = get_done_urls(conn)
+    new = upd = 0
+    for p in products:
+        exists = p["source_url"] in done
+        upsert_product(conn, p)
+        done.add(p["source_url"])
+        if exists:
+            upd += 1
+        else:
+            new += 1
+    conn.close()
+    print(f"Готово: +{new} новых, ~{upd} обновлено")
+    return new, upd
+
 
 def main():
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
-    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗ (fallback на оригинальные URL)'}\n")
-
-    conn = psycopg2.connect(DATABASE_URL)
-    done_urls = get_done_urls(conn)
-    print(f"ℹ️  Уже в БД: {len(done_urls)} товаров\n")
+    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
 
     total_new = total_upd = 0
 
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
         label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
-        print(f"\n{'='*60}")
-        print(f"📁 {label}")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
 
         products = scrape_category(cat_url, category_ru, sub_category_ru)
-
-        new = upd = 0
-        for p in products:
-            exists = p["source_url"] in done_urls
-            upsert_product(conn, p)
-            done_urls.add(p["source_url"])
-            if exists:
-                upd += 1
-            else:
-                new += 1
-
+        new, upd = save_products(products)
         total_new += new
         total_upd += upd
-        print(f"\n  ✓ {label}: +{new} новых, ~{upd} обновлено")
         time.sleep(2)
 
-    conn.close()
     print(f"\n{'='*60}")
     print(f"✅ ГОТОВО: +{total_new} новых, ~{total_upd} обновлено")
     print(f"{'='*60}")
 
 
-if __name__ == "__main__":
-    main()
-
-
 def main_single():
-    """Парсит одну категорию из переменных окружения (вызывается webhook_server.py)."""
     cat_url  = os.environ.get("SCRAPE_URL", "")
     category = os.environ.get("SCRAPE_CATEGORY", "")
     sub      = os.environ.get("SCRAPE_SUB", "")
@@ -429,44 +376,24 @@ def main_single():
         print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
         return
 
-    # Если URL не задан — ищем в списке CATEGORIES по имени
     if not cat_url:
-        matches = [(u, c, s) for u, c, s in CATEGORIES if c == category and (not sub or s == sub)]
+        matches = [(u, c, s) for u, c, s in CATEGORIES
+                   if c == category and (not sub or s == sub)]
         if not matches:
             print(f"Категория не найдена: {category} / {sub}")
             return
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
-            conn = psycopg2.connect(DATABASE_URL)
             products = scrape_category(url, cat, sub_cat)
-            done = get_done_urls(conn)
-            new = upd = 0
-            for p in products:
-                exists = p["source_url"] in done
-                upsert_product(conn, p)
-                if exists: upd += 1
-                else: new += 1
-            conn.close()
-            print(f"Готово: +{new} новых, ~{upd} обновлено")
+            save_products(products)
         return
 
-    # Парсим конкретный URL
     print(f"\nПарсим: {category} / {sub} | {cat_url}")
-    conn = psycopg2.connect(DATABASE_URL)
     products = scrape_category(cat_url, category, sub)
-    done = get_done_urls(conn)
-    new = upd = 0
-    for p in products:
-        exists = p["source_url"] in done
-        upsert_product(conn, p)
-        if exists: upd += 1
-        else: new += 1
-    conn.close()
-    print(f"Готово: +{new} новых, ~{upd} обновлено")
+    save_products(products)
 
 
 if __name__ == "__main__":
-    import sys
     if "--single" in sys.argv:
         main_single()
     else:
