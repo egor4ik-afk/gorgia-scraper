@@ -234,7 +234,7 @@ def save_products(products):
                     %(image_url)s,
                     %(images)s::jsonb
                 )
-                ON CONFLICT (external_id)
+                ON CONFLICT (external_id, source)
                 DO UPDATE SET
                     price = EXCLUDED.price,
                     in_stock = EXCLUDED.in_stock,
