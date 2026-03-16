@@ -25,7 +25,6 @@ HEADERS  = {
     "Accept-Language": "ka,ru;q=0.9,en;q=0.8",
 }
 
-# Твои категории
 CATEGORIES = [
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-magidebi-da-merxebi/",   "IKEA", "Столы"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-stulebida-skamebi/",      "IKEA", "Стулья"),
@@ -33,15 +32,49 @@ CATEGORIES = [
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",         "IKEA", "Гостиная"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",          "IKEA", "Спальня"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/",                           "IKEA", "Освещение"),
-    # ...добавь остальные категории по аналогии
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulosaTvis/",                   "IKEA", "Кухня"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-abazanisaTvis/",                      "IKEA", "Ванная"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saTamaSoebi-da-bavSvTa-aveji/",       "IKEA", "Детская"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-tekstili/",                           "IKEA", "Текстиль"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-dekoracia/",                          "IKEA", "Декор"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicionerebi/",                         "Климатическое оборудование", "Кондиционеры"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/saventilacio-sistemebi/",                 "Климатическое оборудование", "Вентиляция"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamaTbobeli/",                      "Климатическое оборудование", "Водонагреватели"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kolektorebi/",                            "Климатическое оборудование", "Коллекторы"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/gamaTbobeli-aparatebi/",                  "Климатическое оборудование", "Обогреватели"),
+    ("https://gorgia.ge/ka/avejis-maRazia/magidebidamerxebi/",                         "Мебель", "Столы"),
+    ("https://gorgia.ge/ka/avejis-maRazia/skrebi/",                                    "Мебель", "Стулья"),
+    ("https://gorgia.ge/ka/avejis-maRazia/vesalkebi/",                                 "Мебель", "Вешалки"),
+    ("https://gorgia.ge/ka/avejis-maRazia/tumbo/",                                     "Мебель", "Тумбочки"),
+    ("https://gorgia.ge/ka/avejis-maRazia/quchis-aveji/",                              "Мебель", "Уличная мебель"),
+    ("https://gorgia.ge/ka/avejis-maRazia/bavSvTa-aveji/",                             "Мебель", "Детская мебель"),
+    ("https://gorgia.ge/ka/ganateba/magidis-naTurebi/",                                "Освещение", "Настольные лампы"),
+    ("https://gorgia.ge/ka/santeknika/smesitelebi/",                                   "Сантехника", "Смесители"),
+    ("https://gorgia.ge/ka/santeknika/rakovina/",                                      "Сантехника", "Раковины"),
+    ("https://gorgia.ge/ka/baRi-da-aivani/",                                           "Сад", ""),
+    ("https://gorgia.ge/ka/turizmi-da-dasveneba/",                                     "Туризм", ""),
+    ("https://gorgia.ge/ka/saTamaSoebi/",                                              "Игрушки", ""),
+    ("https://gorgia.ge/ka/cxovelebisTvis/",                                           "Товары для животных", ""),
+    ("https://gorgia.ge/ka/remonti/keramikuli-filebi/",                                "Плитка", ""),
 ]
 
-def make_external_id(url: str) -> str:
-    """Генерация безопасного уникального external_id"""
-    path  = urllib.parse.urlparse(url).path.strip("/")
-    slug  = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)[:50]  # только латиница/цифры
-    short = hashlib.md5(path.encode()).hexdigest()[:6]
-    return f"{slug}_{short}"
+TRANS = {
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z',
+    'и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r',
+    'с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh',
+    'щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
+}
+
+
+def make_external_id(url: str, category_ru: str) -> str:
+    # Транслит категории → одно слово без спецсимволов
+    slug = category_ru.lower()
+    slug = ''.join(TRANS.get(c, c) for c in slug)
+    slug = re.sub(r'[^a-z0-9]', '', slug)
+    # Уникальный числовой суффикс из хэша URL товара
+    num = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
+    return f"{slug}_{num}"
+
 
 def to_webp(url: str) -> str:
     return (
@@ -53,6 +86,7 @@ def to_webp(url: str) -> str:
         .replace(".jpeg", "_jpg.webp")
         .replace(".png",  "_jpg.webp")
     )
+
 
 def get_soup(url: str, retries=3):
     for attempt in range(retries):
@@ -68,6 +102,7 @@ def get_soup(url: str, retries=3):
             time.sleep(wait)
     return None
 
+
 def translate(text: str, target: str = "ru") -> str:
     if not text or not text.strip():
         return ""
@@ -82,6 +117,7 @@ def translate(text: str, target: str = "ru") -> str:
     except Exception as e:
         print(f"  ⚠️ translate({target}): {e}")
     return text
+
 
 def upload_to_blob(img_url: str, blob_path: str) -> str:
     if not VERCEL_BLOB_TOKEN:
@@ -108,19 +144,27 @@ def upload_to_blob(img_url: str, blob_path: str) -> str:
         print(f"  ❌ Blob: {e}")
     return img_url
 
+
 def parse_price(card):
     tag = card.select_one(".ty-price-num")
     if not tag:
         return None
     for s in tag.find_all("sup"):
         s.extract()
-    raw = "".join(str(child).strip() for child in tag.children if isinstance(child, str) and str(child).strip())
+    raw = ""
+    for child in tag.children:
+        if isinstance(child, NavigableString):
+            t = str(child).strip()
+            if t:
+                raw = t
+                break
     if not raw:
         raw = tag.get_text(strip=True)
     try:
         return float(re.sub(r"[^\d.,]", "", raw).replace(",", "."))
     except ValueError:
         return None
+
 
 def parse_availability(card):
     tag = card.select_one(".ty-qty-in-stock")
@@ -135,8 +179,10 @@ def parse_availability(card):
         return "არ არის მარაგში", False
     return text, False
 
+
 def get_image_urls(card):
     urls, seen = [], set()
+
     def add(u):
         u = u.strip()
         if u and u not in seen:
@@ -157,6 +203,7 @@ def get_image_urls(card):
                 add(src)
 
     return urls
+
 
 def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list:
     products = []
@@ -187,29 +234,30 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             price       = parse_price(card)
             avail_ka, in_stock = parse_availability(card)
             image_urls  = get_image_urls(card)
-            external_id = make_external_id(product_url)
+            external_id = make_external_id(product_url, category_ru)
 
             name_ru  = translate(name_ka, "ru")
             name_en  = translate(name_ka, "en")
             avail_ru = translate(avail_ka, "ru") if avail_ka else ""
 
             uploaded = []
-            for idx, img_url in enumerate(image_urls[:10]):
-                ext  = "webp" if "webp" in img_url else "jpg"
-                path = f"gorgia/{external_id}/{idx}.{ext}"
-                uploaded.append(upload_to_blob(img_url, path))
-                time.sleep(0.3)
+            if in_stock:
+                for idx, img_url in enumerate(image_urls[:10]):
+                    ext  = "webp" if "webp" in img_url else "jpg"
+                    path = f"gorgia/{external_id}/{idx}.{ext}"
+                    uploaded.append(upload_to_blob(img_url, path))
+                    time.sleep(0.3)
+            else:
+                uploaded = image_urls
 
             products.append({
                 "external_id":     external_id,
                 "source":          "gorgia",
                 "source_url":      product_url,
-                "gorgia_url":      product_url,
                 "name":            name_ru or name_ka,
                 "name_ka":         name_ka,
                 "name_ru":         name_ru,
                 "name_en":         name_en,
-                "availability":    avail_ru or avail_ka,
                 "availability_ka": avail_ka,
                 "availability_ru": avail_ru,
                 "category":        category_ru,
@@ -219,8 +267,8 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 "price":           price,
                 "currency":        "GEL",
                 "in_stock":        in_stock,
-                "image_url":       uploaded[0] if uploaded else (image_urls[0] if image_urls else None),
-                "images":          json.dumps(uploaded or image_urls),
+                "image_url":       uploaded[0] if uploaded else None,
+                "images":          json.dumps(uploaded),
             })
 
             flag = "✅" if in_stock else "❌"
@@ -238,10 +286,12 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
     return products
 
+
 def get_done_urls(conn) -> set:
     with conn.cursor() as cur:
         cur.execute("SELECT source_url FROM products WHERE source = 'gorgia' AND source_url IS NOT NULL")
         return {row[0] for row in cur.fetchall()}
+
 
 def upsert_product(conn, p: dict):
     with conn.cursor() as cur:
@@ -257,12 +307,10 @@ def upsert_product(conn, p: dict):
                 UPDATE products SET
                     price           = %(price)s,
                     in_stock        = %(in_stock)s,
-                    availability    = %(availability)s,
                     availability_ka = %(availability_ka)s,
                     availability_ru = %(availability_ru)s,
                     image_url       = COALESCE(%(image_url)s, image_url),
                     images          = COALESCE(%(images)s::jsonb, images),
-                    gorgia_url      = %(gorgia_url)s,
                     updated_at      = NOW()
                 WHERE external_id = %(external_id)s AND source = 'gorgia'
             """, p)
@@ -270,17 +318,17 @@ def upsert_product(conn, p: dict):
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO products (
-                    external_id, source, source_url, gorgia_url,
+                    external_id, source, source_url,
                     name, name_ka, name_ru, name_en,
-                    availability, availability_ka, availability_ru,
+                    availability_ka, availability_ru,
                     category, category_ru,
                     sub_category, sub_category_ru,
                     price, currency, in_stock,
                     image_url, images
                 ) VALUES (
-                    %(external_id)s, %(source)s, %(source_url)s, %(gorgia_url)s,
+                    %(external_id)s, %(source)s, %(source_url)s,
                     %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
-                    %(availability)s, %(availability_ka)s, %(availability_ru)s,
+                    %(availability_ka)s, %(availability_ru)s,
                     %(category)s, %(category_ru)s,
                     %(sub_category)s, %(sub_category_ru)s,
                     %(price)s, %(currency)s, %(in_stock)s,
@@ -288,6 +336,7 @@ def upsert_product(conn, p: dict):
                 )
             """, p)
     conn.commit()
+
 
 def save_products(products: list):
     conn = psycopg2.connect(DATABASE_URL)
@@ -305,6 +354,7 @@ def save_products(products: list):
     print(f"Готово: +{new} новых, ~{upd} обновлено")
     return new, upd
 
+
 def main():
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
@@ -316,7 +366,6 @@ def main():
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
         label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
-
         products = scrape_category(cat_url, category_ru, sub_category_ru)
         new, upd = save_products(products)
         total_new += new
@@ -326,6 +375,7 @@ def main():
     print(f"\n{'='*60}")
     print(f"✅ ГОТОВО: +{total_new} новых, ~{total_upd} обновлено")
     print(f"{'='*60}")
+
 
 def main_single():
     cat_url  = os.environ.get("SCRAPE_URL", "")
@@ -351,6 +401,7 @@ def main_single():
     print(f"\nПарсим: {category} / {sub} | {cat_url}")
     products = scrape_category(cat_url, category, sub)
     save_products(products)
+
 
 if __name__ == "__main__":
     if "--single" in sys.argv:
