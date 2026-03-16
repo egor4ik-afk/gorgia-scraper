@@ -74,10 +74,17 @@ TRANS = {
 def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
                            category_ru: str, sub_category_ru: str) -> dict:
     """
-    Генерирует описание товара на 3 языках через Gemini.
+    Генерирует описание товара на 3 языках через Gemini SDK.
     Возвращает {'ru': str, 'en': str, 'ka': str} или пустой dict при ошибке.
     """
     if not GEMINI_API_KEY:
+        return {}
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+    except ImportError:
+        print("  ⚠️ google-generativeai не установлен: pip install google-generativeai")
         return {}
 
     name = name_ru or name_en or name_ka
@@ -99,20 +106,11 @@ Return ONLY a valid JSON object with exactly these keys:
 No markdown, no extra text, just the JSON."""
 
     try:
-        res = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}",
-            headers={"Content-Type": "application/json"},
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=20,
-        )
-        if res.status_code != 200:
-            print(f"  ⚠️ Gemini {res.status_code}: {res.text[:100]}")
-            return {}
-
-        text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-        # Убираем возможные markdown-блоки
-        text = re.sub(r"```json\s*|\s*```", "", text).strip()
-        data = json.loads(text)
+        model    = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        text     = (response.text or "").strip()
+        text     = re.sub(r"```json\s*|\s*```", "", text).strip()
+        data     = json.loads(text)
         return {
             "ru": str(data.get("ru", ""))[:500],
             "en": str(data.get("en", ""))[:500],
