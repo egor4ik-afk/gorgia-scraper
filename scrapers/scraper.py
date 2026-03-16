@@ -25,16 +25,34 @@ HEADERS  = {
     "Accept-Language": "ka,ru;q=0.9,en;q=0.8",
 }
 
+# Твои категории
 CATEGORIES = [
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/", "IKEA", "Освещение"),
-    # Добавляй другие категории по необходимости
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-magidebi-da-merxebi/",   "IKEA", "Столы"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-stulebida-skamebi/",      "IKEA", "Стулья"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-karebiani-satumebi/",     "IKEA", "Шкафы"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",         "IKEA", "Гостиная"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",          "IKEA", "Спальня"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/",                           "IKEA", "Освещение"),
+    # ...добавь остальные категории по аналогии
 ]
 
-def make_external_id(url: str, category_ru: str) -> str:
-    slug = category_ru.lower()
-    slug = re.sub(r'[^a-z0-9]', '', slug)  # одно слово
-    num  = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
-    return f"{slug}_{num}"
+def make_external_id(url: str) -> str:
+    """Генерация безопасного уникального external_id"""
+    path  = urllib.parse.urlparse(url).path.strip("/")
+    slug  = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)[:50]  # только латиница/цифры
+    short = hashlib.md5(path.encode()).hexdigest()[:6]
+    return f"{slug}_{short}"
+
+def to_webp(url: str) -> str:
+    return (
+        url
+        .replace("/images/thumbnails/240/240/", "/images/ab__webp/thumbnails/1100/900/")
+        .replace("/images/thumbnails/480/480/", "/images/ab__webp/thumbnails/1100/900/")
+        .replace(".jpg",  "_jpg.webp")
+        .replace(".JPG",  "_jpg.webp")
+        .replace(".jpeg", "_jpg.webp")
+        .replace(".png",  "_jpg.webp")
+    )
 
 def get_soup(url: str, retries=3):
     for attempt in range(retries):
@@ -50,13 +68,55 @@ def get_soup(url: str, retries=3):
             time.sleep(wait)
     return None
 
+def translate(text: str, target: str = "ru") -> str:
+    if not text or not text.strip():
+        return ""
+    try:
+        r = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "ka", "tl": target, "dt": "t", "q": text},
+            timeout=12,
+        )
+        if r.status_code == 200:
+            return "".join(t[0] for t in r.json()[0] if t[0])
+    except Exception as e:
+        print(f"  ⚠️ translate({target}): {e}")
+    return text
+
+def upload_to_blob(img_url: str, blob_path: str) -> str:
+    if not VERCEL_BLOB_TOKEN:
+        return img_url
+    try:
+        r = requests.get(img_url, headers=HEADERS, stream=True, timeout=25)
+        if r.status_code != 200:
+            return img_url
+        ctype = r.headers.get("Content-Type", "image/webp")
+        res = requests.put(
+            f"https://blob.vercel-storage.com/{blob_path}",
+            headers={
+                "Authorization": f"Bearer {VERCEL_BLOB_TOKEN}",
+                "Content-Type": ctype,
+                "x-content-type": ctype,
+            },
+            data=r.content,
+            timeout=40,
+        )
+        if res.status_code in (200, 201):
+            return res.json().get("url", img_url)
+        print(f"  ⚠️ Blob {res.status_code}: {res.text[:100]}")
+    except Exception as e:
+        print(f"  ❌ Blob: {e}")
+    return img_url
+
 def parse_price(card):
     tag = card.select_one(".ty-price-num")
     if not tag:
         return None
     for s in tag.find_all("sup"):
         s.extract()
-    raw = "".join(c.strip() for c in tag.strings if c.strip())
+    raw = "".join(str(child).strip() for child in tag.children if isinstance(child, str) and str(child).strip())
+    if not raw:
+        raw = tag.get_text(strip=True)
     try:
         return float(re.sub(r"[^\d.,]", "", raw).replace(",", "."))
     except ValueError:
@@ -77,7 +137,6 @@ def parse_availability(card):
 
 def get_image_urls(card):
     urls, seen = [], set()
-
     def add(u):
         u = u.strip()
         if u and u not in seen:
@@ -86,12 +145,16 @@ def get_image_urls(card):
 
     img = card.select_one(".ut2-gl__image img")
     if img and img.get("src"):
-        add(img["src"])
+        add(to_webp(img["src"]))
 
     for item in card.select(".item[data-ca-product-additional-image-src]"):
-        src = item.get("data-ca-product-additional-image-src", "")
-        if src:
-            add(src)
+        srcset = item.get("data-ca-product-additional-image-srcset", "")
+        if srcset:
+            add(srcset.split()[0])
+        else:
+            src = item.get("data-ca-product-additional-image-src", "")
+            if src:
+                add(src)
 
     return urls
 
@@ -101,11 +164,10 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
     while True:
         url = cat_url if page == 1 else f"{cat_url}?page={page}"
-        print(f"\n📄 Страница {page}: {url}")
+        print(f"\n  📄 Страница {page}: {url}")
 
         soup = get_soup(url)
         if not soup:
-            print("  ℹ️ Страница не найдена или ошибка")
             break
 
         cards = soup.select(".ut2-gl__body")
@@ -125,18 +187,31 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             price       = parse_price(card)
             avail_ka, in_stock = parse_availability(card)
             image_urls  = get_image_urls(card)
-            external_id = make_external_id(product_url, category_ru)
+            external_id = make_external_id(product_url)
+
+            name_ru  = translate(name_ka, "ru")
+            name_en  = translate(name_ka, "en")
+            avail_ru = translate(avail_ka, "ru") if avail_ka else ""
+
+            uploaded = []
+            for idx, img_url in enumerate(image_urls[:10]):
+                ext  = "webp" if "webp" in img_url else "jpg"
+                path = f"gorgia/{external_id}/{idx}.{ext}"
+                uploaded.append(upload_to_blob(img_url, path))
+                time.sleep(0.3)
 
             products.append({
                 "external_id":     external_id,
                 "source":          "gorgia",
                 "source_url":      product_url,
-                "name":            name_ka,
+                "gorgia_url":      product_url,
+                "name":            name_ru or name_ka,
                 "name_ka":         name_ka,
-                "name_ru":         name_ka,
-                "name_en":         name_ka,
+                "name_ru":         name_ru,
+                "name_en":         name_en,
+                "availability":    avail_ru or avail_ka,
                 "availability_ka": avail_ka,
-                "availability_ru": avail_ka,
+                "availability_ru": avail_ru,
                 "category":        category_ru,
                 "category_ru":     category_ru,
                 "sub_category":    sub_category_ru,
@@ -144,11 +219,17 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 "price":           price,
                 "currency":        "GEL",
                 "in_stock":        in_stock,
-                "image_url":       image_urls[0] if image_urls else None,
-                "images":          json.dumps(image_urls),
+                "image_url":       uploaded[0] if uploaded else (image_urls[0] if image_urls else None),
+                "images":          json.dumps(uploaded or image_urls),
             })
 
-        next_btn = soup.select_one(".ty-pagination__next:not(.ty-pagination__disabled)")
+            flag = "✅" if in_stock else "❌"
+            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото")
+            time.sleep(REQUEST_DELAY)
+
+        next_btn = soup.select_one(
+            ".ty-pagination__next:not(.ty-pagination__disabled), .ty-pagination__next a"
+        )
         if not next_btn:
             break
 
@@ -157,55 +238,122 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
     return products
 
-def save_products(products: list):
-    if not products:
-        print("Нет товаров для сохранения")
-        return
-    conn = psycopg2.connect(DATABASE_URL)
+def get_done_urls(conn) -> set:
     with conn.cursor() as cur:
-        for p in products:
+        cur.execute("SELECT source_url FROM products WHERE source = 'gorgia' AND source_url IS NOT NULL")
+        return {row[0] for row in cur.fetchall()}
+
+def upsert_product(conn, p: dict):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
+            [p["external_id"]]
+        )
+        existing = cur.fetchone()
+
+    if existing:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE products SET
+                    price           = %(price)s,
+                    in_stock        = %(in_stock)s,
+                    availability    = %(availability)s,
+                    availability_ka = %(availability_ka)s,
+                    availability_ru = %(availability_ru)s,
+                    image_url       = COALESCE(%(image_url)s, image_url),
+                    images          = COALESCE(%(images)s::jsonb, images),
+                    gorgia_url      = %(gorgia_url)s,
+                    updated_at      = NOW()
+                WHERE external_id = %(external_id)s AND source = 'gorgia'
+            """, p)
+    else:
+        with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO products (
-                    external_id, source, source_url,
+                    external_id, source, source_url, gorgia_url,
                     name, name_ka, name_ru, name_en,
-                    availability_ka, availability_ru,
+                    availability, availability_ka, availability_ru,
                     category, category_ru,
                     sub_category, sub_category_ru,
                     price, currency, in_stock,
                     image_url, images
                 ) VALUES (
-                    %(external_id)s, %(source)s, %(source_url)s,
+                    %(external_id)s, %(source)s, %(source_url)s, %(gorgia_url)s,
                     %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
-                    %(availability_ka)s, %(availability_ru)s,
+                    %(availability)s, %(availability_ka)s, %(availability_ru)s,
                     %(category)s, %(category_ru)s,
                     %(sub_category)s, %(sub_category_ru)s,
                     %(price)s, %(currency)s, %(in_stock)s,
                     %(image_url)s, %(images)s::jsonb
                 )
-                ON CONFLICT (external_id) DO UPDATE SET
-                    price = EXCLUDED.price,
-                    in_stock = EXCLUDED.in_stock,
-                    availability_ka = EXCLUDED.availability_ka,
-                    availability_ru = EXCLUDED.availability_ru,
-                    image_url = EXCLUDED.image_url,
-                    images = EXCLUDED.images,
-                    name = EXCLUDED.name,
-                    updated_at = NOW()
             """, p)
     conn.commit()
+
+def save_products(products: list):
+    conn = psycopg2.connect(DATABASE_URL)
+    done = get_done_urls(conn)
+    new = upd = 0
+    for p in products:
+        exists = p["source_url"] in done
+        upsert_product(conn, p)
+        done.add(p["source_url"])
+        if exists:
+            upd += 1
+        else:
+            new += 1
     conn.close()
-    print(f"Сохранено товаров: {len(products)}")
+    print(f"Готово: +{new} новых, ~{upd} обновлено")
+    return new, upd
 
 def main():
     print("🚀 Gorgia scraper запущен")
-    total_products = 0
+    print(f"📂 Категорий: {len(CATEGORIES)}")
+    print(f"🗄  DB: {DATABASE_URL[:40]}…")
+    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
+
+    total_new = total_upd = 0
+
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
-        print(f"\n📁 Парсим категорию: {category_ru} / {sub_category_ru}")
+        label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
+        print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
+
         products = scrape_category(cat_url, category_ru, sub_category_ru)
-        save_products(products)
-        total_products += len(products)
+        new, upd = save_products(products)
+        total_new += new
+        total_upd += upd
         time.sleep(2)
-    print(f"\n✅ Скрейп завершен, всего товаров: {total_products}")
+
+    print(f"\n{'='*60}")
+    print(f"✅ ГОТОВО: +{total_new} новых, ~{total_upd} обновлено")
+    print(f"{'='*60}")
+
+def main_single():
+    cat_url  = os.environ.get("SCRAPE_URL", "")
+    category = os.environ.get("SCRAPE_CATEGORY", "")
+    sub      = os.environ.get("SCRAPE_SUB", "")
+
+    if not cat_url and not category:
+        print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
+        return
+
+    if not cat_url:
+        matches = [(u, c, s) for u, c, s in CATEGORIES
+                   if c == category and (not sub or s == sub)]
+        if not matches:
+            print(f"Категория не найдена: {category} / {sub}")
+            return
+        for url, cat, sub_cat in matches:
+            print(f"\nПарсим: {cat} / {sub_cat}")
+            products = scrape_category(url, cat, sub_cat)
+            save_products(products)
+        return
+
+    print(f"\nПарсим: {category} / {sub} | {cat_url}")
+    products = scrape_category(cat_url, category, sub)
+    save_products(products)
 
 if __name__ == "__main__":
-    main()
+    if "--single" in sys.argv:
+        main_single()
+    else:
+        main()
