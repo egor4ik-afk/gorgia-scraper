@@ -118,47 +118,87 @@ No markdown, no extra text, just the JSON."""
         return {}
 
 
+BATCH_SIZE   = 5    # товаров за раз
+BATCH_PAUSE  = 2.0  # секунд между батчами
+ITEM_PAUSE   = 0.5  # секунд между товарами внутри батча
+
 def generate_descriptions_batch(products: list) -> list:
     """
-    Генерирует описания для списка товаров порциями по 10.
-    Добавляет поля description_ru/en/ka в каждый продукт.
+    Генерирует описания батчами по BATCH_SIZE.
+    Логирует каждый товар и ошибки, отправляет итог в TG.
     """
     if not GEMINI_API_KEY:
         print("  ℹ️ GEMINI_API_KEY не задан, описания пропускаем")
         return products
 
-    total = len(products)
-    print(f"\n  🤖 Генерируем описания Gemini для {total} товаров (по 10)...")
+    total   = len(products)
+    ok_cnt  = 0
+    err_cnt = 0
+    tg_lines = []
 
-    for i in range(0, total, 10):
-        batch = products[i:i+10]
+    print(f"\n  🤖 Генерируем описания Gemini: {total} товаров, батчи по {BATCH_SIZE}...")
+
+    for batch_num, i in enumerate(range(0, total, BATCH_SIZE), start=1):
+        batch = products[i:i + BATCH_SIZE]
+        print(f"\n  📦 Батч {batch_num} ({i+1}–{min(i+BATCH_SIZE, total)} из {total})")
+
         for p in batch:
+            name = p.get("name_ru") or p.get("name_ka") or "?"
+
             # Пропускаем если описание уже есть
             if p.get("description_ru"):
+                print(f"    ⏭️  {name[:45]} — уже есть, пропуск")
                 continue
-            descs = generate_descriptions(
-                p.get("name_ru", ""),
-                p.get("name_en", ""),
-                p.get("name_ka", ""),
-                p.get("category_ru", ""),
-                p.get("sub_category_ru", ""),
-            )
-            if descs:
-                p["description_ru"] = descs.get("ru", "")
-                p["description_en"] = descs.get("en", "")
-                p["description_ka"] = descs.get("ka", "")
-                p["description"]    = descs.get("ru", "")
-                print(f"    ✍️  {p.get('name_ru', '')[:40]} — описание готово")
-            else:
+
+            try:
+                descs = generate_descriptions(
+                    p.get("name_ru", ""),
+                    p.get("name_en", ""),
+                    p.get("name_ka", ""),
+                    p.get("category_ru", ""),
+                    p.get("sub_category_ru", ""),
+                )
+                if descs and descs.get("ru"):
+                    p["description_ru"] = descs["ru"]
+                    p["description_en"] = descs.get("en", "")
+                    p["description_ka"] = descs.get("ka", "")
+                    p["description"]    = descs["ru"]
+                    ok_cnt += 1
+                    short = descs["ru"][:80] + ("…" if len(descs["ru"]) > 80 else "")
+                    print(f"    ✍️  {name[:45]}")
+                    print(f"         RU: {short}")
+                    tg_lines.append(f"✍️ *{name[:40]}*\n_{short}_")
+                else:
+                    raise ValueError("Пустой ответ от Gemini")
+
+            except Exception as e:
+                err_cnt += 1
+                reason = str(e)[:120]
                 p.setdefault("description_ru", "")
                 p.setdefault("description_en", "")
                 p.setdefault("description_ka", "")
                 p.setdefault("description", "")
-            time.sleep(0.5)  # rate limit
+                print(f"    ❌  {name[:45]} — ОШИБКА: {reason}")
+                tg_lines.append(f"❌ *{name[:40]}* — `{reason}`")
 
-        done = min(i + 10, total)
-        print(f"  📝 {done}/{total} описаний готово")
+            time.sleep(ITEM_PAUSE)
 
+        done = min(i + BATCH_SIZE, total)
+        print(f"  ✅ Батч {batch_num} готов ({done}/{total}), пауза {BATCH_PAUSE}с...")
+
+        if i + BATCH_SIZE < total:
+            time.sleep(BATCH_PAUSE)
+
+    # Итог в Telegram
+    summary = (
+        f"🤖 *Описания Gemini*\n"
+        f"Всего: {total} | ✅ {ok_cnt} | ❌ {err_cnt}\n\n"
+        + "\n\n".join(tg_lines[:20])  # не больше 20 строк чтобы не превысить лимит TG
+        + ("\n\n_...и ещё_" if len(tg_lines) > 20 else "")
+    )
+    tg_notify(summary)
+
+    print(f"\n  📊 Итого описаний: ✅ {ok_cnt} готово, ❌ {err_cnt} ошибок")
     return products
 
 
