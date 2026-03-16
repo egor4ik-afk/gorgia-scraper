@@ -74,19 +74,13 @@ TRANS = {
 def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
                            category_ru: str, sub_category_ru: str) -> dict:
     """
-    Генерирует описание товара на 3 языках через Gemini SDK.
+    Генерирует описание товара на 3 языках через Gemini REST API (без SDK).
     Возвращает {'ru': str, 'en': str, 'ka': str} или пустой dict при ошибке.
     """
     if not GEMINI_API_KEY:
         return {}
 
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-    except ImportError:
-        print("  ⚠️ google-generativeai не установлен: pip install google-generativeai")
-        return {}
-
+    import urllib.request
     name = name_ru or name_en or name_ka
     cat  = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
 
@@ -106,15 +100,18 @@ Return ONLY a valid JSON object with exactly these keys:
 No markdown, no extra text, just the JSON."""
 
     try:
-        model    = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        text     = (response.text or "").strip()
-        text     = re.sub(r"```json\s*|\s*```", "", text).strip()
-        data     = json.loads(text)
+        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode()
+        req  = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        text = re.sub(r"```json\s*|\s*```", "", text).strip()
+        parsed = json.loads(text)
         return {
-            "ru": str(data.get("ru", ""))[:500],
-            "en": str(data.get("en", ""))[:500],
-            "ka": str(data.get("ka", ""))[:500],
+            "ru": str(parsed.get("ru", ""))[:500],
+            "en": str(parsed.get("en", ""))[:500],
+            "ka": str(parsed.get("ka", ""))[:500],
         }
     except Exception as e:
         print(f"  ⚠️ Gemini error: {e}")
