@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scrapers/scraper.py — Gorgia.ge category scraper
+scrapers/scraper.py — Gorgia.ge category scraper with Gemini descriptions
 """
 
 import os
@@ -16,6 +16,7 @@ import psycopg2
 
 DATABASE_URL      = os.environ["DATABASE_URL"]
 VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "") or os.environ.get("VERCEL_BLOB_TOKEN", "")
+GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY", "")
 REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
 TG_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT           = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -67,6 +68,106 @@ TRANS = {
     'щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
 }
 
+
+# ─── Gemini ───────────────────────────────────────────────────────────────────
+
+def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
+                           category_ru: str, sub_category_ru: str) -> dict:
+    """
+    Генерирует описание товара на 3 языках через Gemini.
+    Возвращает {'ru': str, 'en': str, 'ka': str} или пустой dict при ошибке.
+    """
+    if not GEMINI_API_KEY:
+        return {}
+
+    name = name_ru or name_en or name_ka
+    cat  = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
+
+    prompt = f"""You are a product copywriter for an online store in Georgia (country).
+Write a short, natural product description (2-3 sentences, max 300 chars each) for:
+
+Product: {name}
+Category: {cat}
+
+Return ONLY a valid JSON object with exactly these keys:
+{{
+  "ru": "описание на русском",
+  "en": "description in english",
+  "ka": "აღწერა ქართულად"
+}}
+
+No markdown, no extra text, just the JSON."""
+
+    try:
+        res = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}",
+            headers={"Content-Type": "application/json"},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=20,
+        )
+        if res.status_code != 200:
+            print(f"  ⚠️ Gemini {res.status_code}: {res.text[:100]}")
+            return {}
+
+        text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # Убираем возможные markdown-блоки
+        text = re.sub(r"```json\s*|\s*```", "", text).strip()
+        data = json.loads(text)
+        return {
+            "ru": str(data.get("ru", ""))[:500],
+            "en": str(data.get("en", ""))[:500],
+            "ka": str(data.get("ka", ""))[:500],
+        }
+    except Exception as e:
+        print(f"  ⚠️ Gemini error: {e}")
+        return {}
+
+
+def generate_descriptions_batch(products: list) -> list:
+    """
+    Генерирует описания для списка товаров порциями по 10.
+    Добавляет поля description_ru/en/ka в каждый продукт.
+    """
+    if not GEMINI_API_KEY:
+        print("  ℹ️ GEMINI_API_KEY не задан, описания пропускаем")
+        return products
+
+    total = len(products)
+    print(f"\n  🤖 Генерируем описания Gemini для {total} товаров (по 10)...")
+
+    for i in range(0, total, 10):
+        batch = products[i:i+10]
+        for p in batch:
+            # Пропускаем если описание уже есть
+            if p.get("description_ru"):
+                continue
+            descs = generate_descriptions(
+                p.get("name_ru", ""),
+                p.get("name_en", ""),
+                p.get("name_ka", ""),
+                p.get("category_ru", ""),
+                p.get("sub_category_ru", ""),
+            )
+            if descs:
+                p["description_ru"] = descs.get("ru", "")
+                p["description_en"] = descs.get("en", "")
+                p["description_ka"] = descs.get("ka", "")
+                p["description"]    = descs.get("ru", "")
+                print(f"    ✍️  {p.get('name_ru', '')[:40]} — описание готово")
+            else:
+                p.setdefault("description_ru", "")
+                p.setdefault("description_en", "")
+                p.setdefault("description_ka", "")
+                p.setdefault("description", "")
+            time.sleep(0.5)  # rate limit
+
+        done = min(i + 10, total)
+        print(f"  📝 {done}/{total} описаний готово")
+
+    return products
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def make_external_id(url: str, category_ru: str) -> str:
     slug = category_ru.lower()
@@ -218,6 +319,8 @@ def get_image_urls(card):
     return urls
 
 
+# ─── Scraper ──────────────────────────────────────────────────────────────────
+
 def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list:
     products = []
     page = 1
@@ -253,6 +356,9 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             name_en  = translate(name_ka, "en")
             avail_ru = translate(avail_ka, "ru") if avail_ka else ""
 
+            # category_key — первая часть external_id
+            category_key = external_id.split("_")[0]
+
             uploaded = []
             photos_uploaded = 0
             if in_stock:
@@ -269,12 +375,17 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
             products.append({
                 "external_id":     external_id,
+                "category_key":    category_key,
                 "source":          "gorgia",
                 "source_url":      product_url,
                 "name":            name_ru or name_ka,
                 "name_ka":         name_ka,
                 "name_ru":         name_ru,
                 "name_en":         name_en,
+                "description":     "",
+                "description_ru":  "",
+                "description_en":  "",
+                "description_ka":  "",
                 "availability_ka": avail_ka,
                 "availability_ru": avail_ru,
                 "category":        category_ru,
@@ -287,6 +398,7 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 "image_url":       uploaded[0] if uploaded else None,
                 "images":          json.dumps(uploaded),
                 "_photos_uploaded": photos_uploaded,
+                "_is_new":         True,  # флаг для генерации описания
             })
 
             flag = "✅" if in_stock else "❌"
@@ -305,6 +417,8 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
     return products
 
 
+# ─── DB ───────────────────────────────────────────────────────────────────────
+
 def get_done_urls(conn) -> set:
     with conn.cursor() as cur:
         cur.execute("SELECT source_url FROM products WHERE source = 'gorgia' AND source_url IS NOT NULL")
@@ -312,7 +426,6 @@ def get_done_urls(conn) -> set:
 
 
 def upsert_product(conn, p: dict):
-    # Убираем служебное поле перед INSERT
     p_clean = {k: v for k, v in p.items() if not k.startswith('_')}
 
     with conn.cursor() as cur:
@@ -323,6 +436,7 @@ def upsert_product(conn, p: dict):
         existing = cur.fetchone()
 
     if existing:
+        # Обновляем только цену/наличие/фото — описания не трогаем
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE products SET
@@ -332,6 +446,7 @@ def upsert_product(conn, p: dict):
                     availability_ru = %(availability_ru)s,
                     image_url       = COALESCE(%(image_url)s, image_url),
                     images          = COALESCE(%(images)s::jsonb, images),
+                    category_key    = COALESCE(%(category_key)s, category_key),
                     updated_at      = NOW()
                 WHERE external_id = %(external_id)s AND source = 'gorgia'
             """, p_clean)
@@ -339,16 +454,18 @@ def upsert_product(conn, p: dict):
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO products (
-                    external_id, source, source_url,
+                    external_id, category_key, source, source_url,
                     name, name_ka, name_ru, name_en,
+                    description, description_ru, description_en, description_ka,
                     availability_ka, availability_ru,
                     category, category_ru,
                     sub_category, sub_category_ru,
                     price, currency, in_stock,
                     image_url, images
                 ) VALUES (
-                    %(external_id)s, %(source)s, %(source_url)s,
+                    %(external_id)s, %(category_key)s, %(source)s, %(source_url)s,
                     %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
+                    %(description)s, %(description_ru)s, %(description_en)s, %(description_ka)s,
                     %(availability_ka)s, %(availability_ru)s,
                     %(category)s, %(category_ru)s,
                     %(sub_category)s, %(sub_category_ru)s,
@@ -359,42 +476,63 @@ def upsert_product(conn, p: dict):
     conn.commit()
 
 
-def save_products(products: list):
-    conn = psycopg2.connect(DATABASE_URL)
-    done = get_done_urls(conn)
+def save_products(products: list, done_urls: set, conn):
     new = upd = photos = 0
     for p in products:
-        exists = p["source_url"] in done
+        exists = p["source_url"] in done_urls
+        p["_is_new"] = not exists
         upsert_product(conn, p)
-        done.add(p["source_url"])
+        done_urls.add(p["source_url"])
         photos += p.get("_photos_uploaded", 0)
         if exists:
             upd += 1
         else:
             new += 1
-    conn.close()
-    print(f"Готово: +{new} новых, ~{upd} обновлено, 🖼 {photos} фото в Blob")
     return new, upd, photos
 
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     start = time.time()
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
-    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
+    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}")
+    print(f"🤖 Gemini: {'✓' if GEMINI_API_KEY else '✗'}\n")
+
+    conn = psycopg2.connect(DATABASE_URL)
+    done_urls = get_done_urls(conn)
 
     total_new = total_upd = total_photos = 0
 
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
         label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
+
         products = scrape_category(cat_url, category_ru, sub_category_ru)
-        new, upd, photos = save_products(products)
+
+        # Генерируем описания только для новых товаров
+        new_products = [p for p in products if p["source_url"] not in done_urls]
+        if new_products:
+            generate_descriptions_batch(new_products)
+            # Применяем описания обратно
+            desc_map = {p["source_url"]: p for p in new_products}
+            for p in products:
+                if p["source_url"] in desc_map:
+                    dp = desc_map[p["source_url"]]
+                    p["description"]    = dp.get("description", "")
+                    p["description_ru"] = dp.get("description_ru", "")
+                    p["description_en"] = dp.get("description_en", "")
+                    p["description_ka"] = dp.get("description_ka", "")
+
+        new, upd, photos = save_products(products, done_urls, conn)
         total_new += new
         total_upd += upd
         total_photos += photos
         time.sleep(2)
+
+    conn.close()
 
     elapsed = int(time.time() - start)
     total = total_new + total_upd
@@ -420,6 +558,9 @@ def main_single():
         print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
         return
 
+    conn = psycopg2.connect(DATABASE_URL)
+    done_urls = get_done_urls(conn)
+
     total_new = total_upd = total_photos = 0
     label = f"{category} / {sub}" if sub else category or cat_url
 
@@ -428,18 +569,43 @@ def main_single():
                    if c == category and (not sub or s == sub)]
         if not matches:
             print(f"Категория не найдена: {category} / {sub}")
+            conn.close()
             return
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
             products = scrape_category(url, cat, sub_cat)
-            new, upd, photos = save_products(products)
+            new_products = [p for p in products if p["source_url"] not in done_urls]
+            if new_products:
+                generate_descriptions_batch(new_products)
+                desc_map = {p["source_url"]: p for p in new_products}
+                for p in products:
+                    if p["source_url"] in desc_map:
+                        dp = desc_map[p["source_url"]]
+                        p["description"]    = dp.get("description", "")
+                        p["description_ru"] = dp.get("description_ru", "")
+                        p["description_en"] = dp.get("description_en", "")
+                        p["description_ka"] = dp.get("description_ka", "")
+            new, upd, photos = save_products(products, done_urls, conn)
             total_new += new
             total_upd += upd
             total_photos += photos
     else:
         print(f"\nПарсим: {label} | {cat_url}")
         products = scrape_category(cat_url, category, sub)
-        total_new, total_upd, total_photos = save_products(products)
+        new_products = [p for p in products if p["source_url"] not in done_urls]
+        if new_products:
+            generate_descriptions_batch(new_products)
+            desc_map = {p["source_url"]: p for p in new_products}
+            for p in products:
+                if p["source_url"] in desc_map:
+                    dp = desc_map[p["source_url"]]
+                    p["description"]    = dp.get("description", "")
+                    p["description_ru"] = dp.get("description_ru", "")
+                    p["description_en"] = dp.get("description_en", "")
+                    p["description_ka"] = dp.get("description_ka", "")
+        total_new, total_upd, total_photos = save_products(products, done_urls, conn)
+
+    conn.close()
 
     elapsed = int(time.time() - start)
     total = total_new + total_upd
