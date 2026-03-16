@@ -338,7 +338,6 @@ def get_done_urls(conn) -> set[str]:
 
 
 def upsert_product(conn, p: dict):
-    # Проверяем есть ли уже такой товар
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
@@ -355,7 +354,7 @@ def upsert_product(conn, p: dict):
                     availability_ka = %(availability_ka)s,
                     availability_ru = %(availability_ru)s,
                     image_url       = COALESCE(%(image_url)s, image_url),
-                    images          = COALESCE(%(images)s, images),
+                    images          = COALESCE(%(images)s::jsonb, images),
                     updated_at      = NOW()
                 WHERE external_id = %(external_id)s AND source = 'gorgia'
             """, p)
@@ -377,11 +376,10 @@ def upsert_product(conn, p: dict):
                     %(category)s, %(category_ru)s,
                     %(sub_category)s, %(sub_category_ru)s,
                     %(price)s, %(currency)s, %(in_stock)s,
-                    %(image_url)s, %(images)s
+                    %(image_url)s, %(images)s::jsonb
                 )
             """, p)
     conn.commit()
-
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
