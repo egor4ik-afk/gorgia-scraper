@@ -123,10 +123,36 @@ def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
             input=prompt,
             max_output_tokens=500,
         )
-        text = (response.output_text or "").strip()
-        print(f"  → Ответ: {text[:120]}")
-        text = re.sub(r"```json\s*|\s*```", "", text).strip()
-        parsed = json.loads(text)
+
+        # Пробуем output_text, затем output массив
+        text = ""
+        if hasattr(response, "output_text") and response.output_text:
+            text = response.output_text.strip()
+        elif hasattr(response, "output") and response.output:
+            for item in response.output:
+                if hasattr(item, "content"):
+                    for c in item.content:
+                        if hasattr(c, "text"):
+                            text += c.text
+            text = text.strip()
+
+        print(f"  → Сырой ответ: {repr(text)}")
+
+        if not text:
+            print("  ⚠️ Пустой ответ от API")
+            return {}
+
+        # Извлекаем первый JSON объект из ответа
+        match = re.search(r'\{[^{}]*"ru"[^{}]*\}', text, re.DOTALL)
+        if not match:
+            print("  ⚠️ JSON не найден в ответе")
+            return {}
+        json_str = match.group(0)
+        # Заменяем переносы строк внутри значений на пробелы
+        json_str = re.sub(r'\n', " ", json_str)
+        json_str = re.sub(r"  +", " ", json_str)
+
+        parsed = json.loads(json_str)
         return {
             "ru": str(parsed.get("ru", ""))[:500],
             "en": str(parsed.get("en", ""))[:500],
