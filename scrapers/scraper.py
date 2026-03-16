@@ -15,8 +15,10 @@ from bs4 import BeautifulSoup, NavigableString
 import psycopg2
 
 DATABASE_URL      = os.environ["DATABASE_URL"]
-VERCEL_BLOB_TOKEN = os.environ.get("VERCEL_BLOB_TOKEN", "")
+VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "") or os.environ.get("VERCEL_BLOB_TOKEN", "")
 REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
+TG_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT           = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 BASE_URL = "https://gorgia.ge"
 HEADERS  = {
@@ -67,13 +69,24 @@ TRANS = {
 
 
 def make_external_id(url: str, category_ru: str) -> str:
-    # Транслит категории → одно слово без спецсимволов
     slug = category_ru.lower()
     slug = ''.join(TRANS.get(c, c) for c in slug)
     slug = re.sub(r'[^a-z0-9]', '', slug)
-    # Уникальный числовой суффикс из хэша URL товара
-    num = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
+    num  = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
     return f"{slug}_{num}"
+
+
+def tg_notify(text: str):
+    if not TG_TOKEN or not TG_CHAT:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT, "text": text, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"  ⚠️ Telegram: {e}")
 
 
 def to_webp(url: str) -> str:
@@ -241,11 +254,15 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             avail_ru = translate(avail_ka, "ru") if avail_ka else ""
 
             uploaded = []
+            photos_uploaded = 0
             if in_stock:
                 for idx, img_url in enumerate(image_urls[:10]):
                     ext  = "webp" if "webp" in img_url else "jpg"
                     path = f"gorgia/{external_id}/{idx}.{ext}"
-                    uploaded.append(upload_to_blob(img_url, path))
+                    result = upload_to_blob(img_url, path)
+                    uploaded.append(result)
+                    if result != img_url:
+                        photos_uploaded += 1
                     time.sleep(0.3)
             else:
                 uploaded = image_urls
@@ -269,6 +286,7 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 "in_stock":        in_stock,
                 "image_url":       uploaded[0] if uploaded else None,
                 "images":          json.dumps(uploaded),
+                "_photos_uploaded": photos_uploaded,
             })
 
             flag = "✅" if in_stock else "❌"
@@ -294,10 +312,13 @@ def get_done_urls(conn) -> set:
 
 
 def upsert_product(conn, p: dict):
+    # Убираем служебное поле перед INSERT
+    p_clean = {k: v for k, v in p.items() if not k.startswith('_')}
+
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
-            [p["external_id"]]
+            [p_clean["external_id"]]
         )
         existing = cur.fetchone()
 
@@ -313,7 +334,7 @@ def upsert_product(conn, p: dict):
                     images          = COALESCE(%(images)s::jsonb, images),
                     updated_at      = NOW()
                 WHERE external_id = %(external_id)s AND source = 'gorgia'
-            """, p)
+            """, p_clean)
     else:
         with conn.cursor() as cur:
             cur.execute("""
@@ -334,50 +355,63 @@ def upsert_product(conn, p: dict):
                     %(price)s, %(currency)s, %(in_stock)s,
                     %(image_url)s, %(images)s::jsonb
                 )
-            """, p)
+            """, p_clean)
     conn.commit()
 
 
 def save_products(products: list):
     conn = psycopg2.connect(DATABASE_URL)
     done = get_done_urls(conn)
-    new = upd = 0
+    new = upd = photos = 0
     for p in products:
         exists = p["source_url"] in done
         upsert_product(conn, p)
         done.add(p["source_url"])
+        photos += p.get("_photos_uploaded", 0)
         if exists:
             upd += 1
         else:
             new += 1
     conn.close()
-    print(f"Готово: +{new} новых, ~{upd} обновлено")
-    return new, upd
+    print(f"Готово: +{new} новых, ~{upd} обновлено, 🖼 {photos} фото в Blob")
+    return new, upd, photos
 
 
 def main():
+    start = time.time()
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
     print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
 
-    total_new = total_upd = 0
+    total_new = total_upd = total_photos = 0
 
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
         label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
         products = scrape_category(cat_url, category_ru, sub_category_ru)
-        new, upd = save_products(products)
+        new, upd, photos = save_products(products)
         total_new += new
         total_upd += upd
+        total_photos += photos
         time.sleep(2)
 
-    print(f"\n{'='*60}")
-    print(f"✅ ГОТОВО: +{total_new} новых, ~{total_upd} обновлено")
-    print(f"{'='*60}")
+    elapsed = int(time.time() - start)
+    total = total_new + total_upd
+    msg = (
+        f"✅ *Парсинг завершён*\n\n"
+        f"🕐 Время: {elapsed // 60}м {elapsed % 60}с\n"
+        f"🔍 Обработано: *{total}* товаров\n"
+        f"➕ Новых: *{total_new}*\n"
+        f"✏️ Обновлено: *{total_upd}*\n"
+        f"🖼 Фото загружено: *{total_photos}*"
+    )
+    print(f"\n{'='*60}\n{msg}\n{'='*60}")
+    tg_notify(msg)
 
 
 def main_single():
+    start = time.time()
     cat_url  = os.environ.get("SCRAPE_URL", "")
     category = os.environ.get("SCRAPE_CATEGORY", "")
     sub      = os.environ.get("SCRAPE_SUB", "")
@@ -385,6 +419,9 @@ def main_single():
     if not cat_url and not category:
         print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
         return
+
+    total_new = total_upd = total_photos = 0
+    label = f"{category} / {sub}" if sub else category or cat_url
 
     if not cat_url:
         matches = [(u, c, s) for u, c, s in CATEGORIES
@@ -395,12 +432,27 @@ def main_single():
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
             products = scrape_category(url, cat, sub_cat)
-            save_products(products)
-        return
+            new, upd, photos = save_products(products)
+            total_new += new
+            total_upd += upd
+            total_photos += photos
+    else:
+        print(f"\nПарсим: {label} | {cat_url}")
+        products = scrape_category(cat_url, category, sub)
+        total_new, total_upd, total_photos = save_products(products)
 
-    print(f"\nПарсим: {category} / {sub} | {cat_url}")
-    products = scrape_category(cat_url, category, sub)
-    save_products(products)
+    elapsed = int(time.time() - start)
+    total = total_new + total_upd
+    msg = (
+        f"✅ *Парсинг завершён: {label}*\n\n"
+        f"🕐 Время: {elapsed // 60}м {elapsed % 60}с\n"
+        f"🔍 Обработано: *{total}* товаров\n"
+        f"➕ Новых: *{total_new}*\n"
+        f"✏️ Обновлено: *{total_upd}*\n"
+        f"🖼 Фото загружено: *{total_photos}*"
+    )
+    print(msg)
+    tg_notify(msg)
 
 
 if __name__ == "__main__":
