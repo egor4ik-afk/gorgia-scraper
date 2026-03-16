@@ -225,7 +225,7 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             price       = parse_price(card)
             avail_ka, in_stock = parse_availability(card)
             image_urls  = get_image_urls(card)
-            external_id = make_external_id(product_url)
+            external_id = make_external_id(product_url, category_ru)
 
             name_ru  = translate(name_ka, "ru")
             name_en  = translate(name_ka, "en")
