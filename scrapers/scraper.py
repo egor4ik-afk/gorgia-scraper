@@ -58,11 +58,13 @@ CATEGORIES = [
 ]
 
 
-def make_external_id(url: str) -> str:
-    path  = urllib.parse.urlparse(url).path.strip("/")
-    slug  = re.sub(r"[^a-zA-Z0-9_\-]", "_", path)[:80]
-    short = hashlib.md5(path.encode()).hexdigest()[:6]
-    return f"{slug}_{short}"
+def make_external_id(url: str, category_ru: str) -> str:
+    # Один slug из категории без пробелов + хэш URL
+    slug = category_ru.lower()
+    slug = ''.join(TRANS.get(c, c) for c in slug)
+    slug = re.sub(r'[^a-z0-9]', '', slug)  # убираем всё кроме букв и цифр — одно слово
+    num  = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
+    return f"{slug}_{num}"
 
 
 def to_webp(url: str) -> str:
