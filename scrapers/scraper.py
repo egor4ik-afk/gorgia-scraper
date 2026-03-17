@@ -568,23 +568,29 @@ def main():
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
     print(f"🖼  Yandex S3: {'✓' if YANDEX_ACCESS_KEY else '✗'} | бакет: {YANDEX_BUCKET}\n")
 
+    # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
     conn = psycopg2.connect(DATABASE_URL)
     done_urls = get_done_urls(conn)
+    conn.close()
+    
     total_new = total_upd = total_photos = 0
 
     for cat_url, category_ru, sub_category_ru in CATEGORIES:
         label = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
 
+        # Парсинг занимает много времени, БД пока отдыхает
         products = scrape_category(cat_url, category_ru, sub_category_ru)
 
+        # 2. Открыли БД заново ТОЛЬКО для сохранения партии товаров
+        conn = psycopg2.connect(DATABASE_URL)
         new, upd, photos = save_products(products, done_urls, conn)
+        conn.close() # Сохранили и снова закрыли
+
         total_new += new
         total_upd += upd
         total_photos += photos
         time.sleep(2)
-
-    conn.close()
 
     elapsed = int(time.time() - start)
     total = total_new + total_upd
@@ -610,8 +616,11 @@ def main_single():
         print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
         return
 
+    # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
     conn = psycopg2.connect(DATABASE_URL)
     done_urls = get_done_urls(conn)
+    conn.close()
+
     total_new = total_upd = total_photos = 0
     label = f"{category} / {sub}" if sub else category or cat_url
 
@@ -620,21 +629,27 @@ def main_single():
                    if c == category and (not sub or s == sub)]
         if not matches:
             print(f"Категория не найдена: {category} / {sub}")
-            conn.close()
             return
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
             products = scrape_category(url, cat, sub_cat)
+            
+            # 2. Снова открываем только для сохранения
+            conn = psycopg2.connect(DATABASE_URL)
             new, upd, photos = save_products(products, done_urls, conn)
+            conn.close()
+            
             total_new += new
             total_upd += upd
             total_photos += photos
     else:
         print(f"\nПарсим: {label} | {cat_url}")
         products = scrape_category(cat_url, category, sub)
+        
+        # 2. Снова открываем только для сохранения
+        conn = psycopg2.connect(DATABASE_URL)
         total_new, total_upd, total_photos = save_products(products, done_urls, conn)
-
-    conn.close()
+        conn.close()
 
     elapsed = int(time.time() - start)
     total = total_new + total_upd
