@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scrapers/scraper.py — Gorgia.ge category scraper with YandexGPT descriptions
+scrapers/scraper.py — Gorgia.ge category scraper
 """
 
 import os
@@ -16,9 +16,6 @@ import psycopg2
 
 DATABASE_URL      = os.environ["DATABASE_URL"]
 VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "") or os.environ.get("VERCEL_BLOB_TOKEN", "")
-YANDEX_API_KEY    = os.environ.get("YANDEX_API_KEY", "")
-YANDEX_FOLDER_ID  = os.environ.get("YANDEX_FOLDER_ID", "b1gcr5m4ptniag2qpsqm")
-YANDEX_MODEL      = os.environ.get("YANDEX_MODEL", "yandexgpt-5.1/latest")
 REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
 TG_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT           = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -164,172 +161,6 @@ TRANS = {
 BATCH_SIZE  = 5    # товаров за раз
 BATCH_PAUSE = 20.0 # секунд между батчами
 ITEM_PAUSE  = 3.0  # секунд между товарами
-
-
-# ─── YandexGPT ────────────────────────────────────────────────────────────────
-
-def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
-                           category_ru: str, sub_category_ru: str) -> dict:
-    """
-    Генерирует описание товара на 3 языках через YandexGPT 5.1 (openai-совместимый API).
-    Возвращает {'ru': str, 'en': str, 'ka': str} или пустой dict при ошибке.
-    """
-    if not YANDEX_API_KEY:
-        return {}
-
-    try:
-        import openai
-    except ImportError:
-        print("  ⚠️ openai не установлен: pip install openai")
-        return {}
-
-    name = name_ru or name_en or name_ka
-    cat  = f"{category_ru} / {sub_category_ru}" if sub_category_ru else category_ru
-
-    prompt = f"""Ты копирайтер интернет-магазина в Грузии.
-Напиши короткое описание товара (2-3 предложения, макс 300 символов каждое) для:
-
-Товар: {name}
-Категория: {cat}
-
-Верни ТОЛЬКО валидный JSON объект с ключами:
-{{
-  "ru": "описание на русском",
-  "en": "description in english",
-  "ka": "აღწერა ქართულად"
-}}
-
-Без markdown, без лишнего текста, только JSON."""
-
-    try:
-        print(f"  → YandexGPT запрос: {name[:50]}")
-        client = openai.OpenAI(
-            api_key=YANDEX_API_KEY,
-            base_url="https://ai.api.cloud.yandex.net/v1",
-        )
-        response = client.responses.create(
-            model=f"gpt://{YANDEX_FOLDER_ID}/{YANDEX_MODEL}",
-            temperature=0.3,
-            instructions="Ты копирайтер товаров для интернет-магазина.",
-            input=prompt,
-            max_output_tokens=500,
-        )
-
-        # Пробуем output_text, затем output массив
-        text = ""
-        if hasattr(response, "output_text") and response.output_text:
-            text = response.output_text.strip()
-        elif hasattr(response, "output") and response.output:
-            for item in response.output:
-                if hasattr(item, "content"):
-                    for c in item.content:
-                        if hasattr(c, "text"):
-                            text += c.text
-            text = text.strip()
-
-        print(f"  → Сырой ответ: {repr(text)}")
-
-        if not text:
-            print("  ⚠️ Пустой ответ от API")
-            return {}
-
-        # Извлекаем первый JSON объект из ответа
-        print(f"  → ПОЛНЫЙ ОТВЕТ: {repr(text)}")
-        match = re.search(r'\{[^{}]*"ru"[^{}]*\}', text, re.DOTALL)
-        if not match:
-            print("  ⚠️ JSON не найден в ответе")
-            return {}
-        json_str = match.group(0)
-        # Заменяем переносы строк внутри значений на пробелы
-        json_str = re.sub(r'\n', " ", json_str)
-        json_str = re.sub(r"  +", " ", json_str)
-
-        parsed = json.loads(json_str)
-        return {
-            "ru": str(parsed.get("ru", ""))[:500],
-            "en": str(parsed.get("en", ""))[:500],
-            "ka": str(parsed.get("ka", ""))[:500],
-        }
-    except Exception as e:
-        print(f"  ⚠️ YandexGPT error: {type(e).__name__}: {e}")
-        return {}
-
-
-def generate_descriptions_batch(products: list) -> list:
-    """
-    Генерирует описания батчами по BATCH_SIZE.
-    Логирует каждый товар и ошибки, отправляет итог в TG.
-    """
-    if not YANDEX_API_KEY:
-        print("  ℹ️ YANDEX_API_KEY не задан, описания пропускаем")
-        return products
-
-    total    = len(products)
-    ok_cnt   = 0
-    err_cnt  = 0
-    tg_lines = []
-
-    print(f"\n  🤖 YandexGPT: {total} товаров, батчи по {BATCH_SIZE}, пауза {BATCH_PAUSE}с...")
-
-    for batch_num, i in enumerate(range(0, total, BATCH_SIZE), start=1):
-        batch = products[i:i + BATCH_SIZE]
-        print(f"\n  📦 Батч {batch_num} ({i+1}–{min(i+BATCH_SIZE, total)} из {total})")
-
-        for p in batch:
-            name = p.get("name_ru") or p.get("name_ka") or "?"
-
-            if p.get("description_ru"):
-                print(f"    ⏭️  {name[:45]} — уже есть, пропуск")
-                continue
-
-            try:
-                descs = generate_descriptions(
-                    p.get("name_ru", ""),
-                    p.get("name_en", ""),
-                    p.get("name_ka", ""),
-                    p.get("category_ru", ""),
-                    p.get("sub_category_ru", ""),
-                )
-                if descs and descs.get("ru"):
-                    p["description_ru"] = descs["ru"]
-                    p["description_en"] = descs.get("en", "")
-                    p["description_ka"] = descs.get("ka", "")
-                    p["description"]    = descs["ru"]
-                    ok_cnt += 1
-                    short = descs["ru"][:80] + ("…" if len(descs["ru"]) > 80 else "")
-                    print(f"    ✍️  {name[:45]}")
-                    print(f"         RU: {short}")
-                    tg_lines.append(f"✍️ *{name[:40]}*\n_{short}_")
-                else:
-                    raise ValueError("Пустой ответ от YandexGPT")
-
-            except Exception as e:
-                err_cnt += 1
-                reason = str(e)[:120]
-                p.setdefault("description_ru", "")
-                p.setdefault("description_en", "")
-                p.setdefault("description_ka", "")
-                p.setdefault("description", "")
-                print(f"    ❌  {name[:45]} — ОШИБКА: {reason}")
-                tg_lines.append(f"❌ *{name[:40]}* — `{reason}`")
-
-            time.sleep(ITEM_PAUSE)
-
-        done = min(i + BATCH_SIZE, total)
-        print(f"  ✅ Батч {batch_num} готов ({done}/{total})")
-        if i + BATCH_SIZE < total:
-            print(f"  ⏳ Пауза {BATCH_PAUSE}с перед следующим батчем...")
-            time.sleep(BATCH_PAUSE)
-
-    summary = (
-        f"🤖 *Описания YandexGPT*\n"
-        f"Всего: {total} | ✅ {ok_cnt} | ❌ {err_cnt}\n\n"
-        + "\n\n".join(tg_lines[:20])
-        + ("\n\n_...и ещё_" if len(tg_lines) > 20 else "")
-    )
-    tg_notify(summary)
-    print(f"\n  📊 Итого: ✅ {ok_cnt} готово, ❌ {err_cnt} ошибок")
-    return products
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -658,8 +489,7 @@ def main():
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
-    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}")
-    print(f"🤖 YandexGPT: {'✓' if YANDEX_API_KEY else '✗'}\n")
+    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
 
     conn = psycopg2.connect(DATABASE_URL)
     done_urls = get_done_urls(conn)
@@ -670,18 +500,6 @@ def main():
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
 
         products = scrape_category(cat_url, category_ru, sub_category_ru)
-
-        new_products = [p for p in products if p["source_url"] not in done_urls]
-        if new_products:
-            generate_descriptions_batch(new_products)
-            desc_map = {p["source_url"]: p for p in new_products}
-            for p in products:
-                if p["source_url"] in desc_map:
-                    dp = desc_map[p["source_url"]]
-                    p["description"]    = dp.get("description", "")
-                    p["description_ru"] = dp.get("description_ru", "")
-                    p["description_en"] = dp.get("description_en", "")
-                    p["description_ka"] = dp.get("description_ka", "")
 
         new, upd, photos = save_products(products, done_urls, conn)
         total_new += new
@@ -730,17 +548,6 @@ def main_single():
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
             products = scrape_category(url, cat, sub_cat)
-            new_products = [p for p in products if p["source_url"] not in done_urls]
-            if new_products:
-                generate_descriptions_batch(new_products)
-                desc_map = {p["source_url"]: p for p in new_products}
-                for p in products:
-                    if p["source_url"] in desc_map:
-                        dp = desc_map[p["source_url"]]
-                        p["description"]    = dp.get("description", "")
-                        p["description_ru"] = dp.get("description_ru", "")
-                        p["description_en"] = dp.get("description_en", "")
-                        p["description_ka"] = dp.get("description_ka", "")
             new, upd, photos = save_products(products, done_urls, conn)
             total_new += new
             total_upd += upd
@@ -748,17 +555,6 @@ def main_single():
     else:
         print(f"\nПарсим: {label} | {cat_url}")
         products = scrape_category(cat_url, category, sub)
-        new_products = [p for p in products if p["source_url"] not in done_urls]
-        if new_products:
-            generate_descriptions_batch(new_products)
-            desc_map = {p["source_url"]: p for p in new_products}
-            for p in products:
-                if p["source_url"] in desc_map:
-                    dp = desc_map[p["source_url"]]
-                    p["description"]    = dp.get("description", "")
-                    p["description_ru"] = dp.get("description_ru", "")
-                    p["description_en"] = dp.get("description_en", "")
-                    p["description_ka"] = dp.get("description_ka", "")
         total_new, total_upd, total_photos = save_products(products, done_urls, conn)
 
     conn.close()
@@ -777,53 +573,8 @@ def main_single():
     tg_notify(msg)
 
 
-def main_test():
-    """Тест YandexGPT: 1 товар без парсинга и без сохранения в БД."""
-    print("🧪 ТЕСТ YandexGPT — 1 товар\n")
-
-    if not YANDEX_API_KEY:
-        print("❌ YANDEX_API_KEY не задан")
-        return
-
-    test_product = {
-        "name_ru":         "Журнальный столик 118х78 цвет дуб ЛАКК",
-        "name_en":         "Coffee table 118x78 oak color LACK",
-        "name_ka":         "ყავის მაგიდა 118x78 მუხისფერი LACK",
-        "category_ru":     "IKEA",
-        "sub_category_ru": "Столы",
-    }
-
-    print(f"  Товар: {test_product['name_ru']}")
-    print(f"  Категория: {test_product['category_ru']} / {test_product['sub_category_ru']}\n")
-
-    descs = generate_descriptions(
-        test_product["name_ru"],
-        test_product["name_en"],
-        test_product["name_ka"],
-        test_product["category_ru"],
-        test_product["sub_category_ru"],
-    )
-
-    if descs and descs.get("ru"):
-        print("\n✅ Описание сгенерировано:")
-        print(f"  RU: {descs['ru']}")
-        print(f"  EN: {descs['en']}")
-        print(f"  KA: {descs['ka']}")
-        tg_notify(
-            f"🧪 *Тест YandexGPT*\n\n"
-            f"*{test_product['name_ru']}*\n\n"
-            f"RU: {descs['ru']}\n\n"
-            f"EN: {descs['en']}\n\n"
-            f"KA: {descs['ka']}"
-        )
-    else:
-        print("❌ Описание не сгенерировано — проверь логи выше")
-
-
 if __name__ == "__main__":
-    if "--test" in sys.argv:
-        main_test()
-    elif "--single" in sys.argv:
+    if "--single" in sys.argv:
         main_single()
     else:
         main()
