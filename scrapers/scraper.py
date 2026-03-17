@@ -26,8 +26,10 @@ YANDEX_SECRET_KEY  = os.environ.get("YANDEX_SECRET_ACCESS_KEY", "")
 YANDEX_BUCKET      = os.environ.get("YANDEX_BUCKET_NAME", "izipost")
 YANDEX_REGION      = os.environ.get("YANDEX_REGION", "ru-central1")
 YANDEX_ENDPOINT    = "https://storage.yandexcloud.net"
-S3_PREFIX          = "bazariara"
-CDN_BASE           = "https://cdn.relaxdev.ru/bazariara"
+
+# ОБНОВЛЕННЫЕ ПУТИ
+S3_PREFIX          = "bazariara/gorgia"
+CDN_BASE           = "https://cdn.relaxdev.ru"
 
 # S3 клиент
 s3_client = boto3.client(
@@ -132,14 +134,14 @@ CATEGORIES = [
     ("https://gorgia.ge/ka/xelsawyoebi/salesi/",                                       "Инструменты", "Шлифовка"),
     ("https://gorgia.ge/ka/xelsawyoebi/saavtomobilo-aqsesuarebi/",                     "Инструменты", "Автоаксессуары"),
     ("https://gorgia.ge/ka/xelsawyoebi/energiis-da-haeris-warmomqmneli/",              "Инструменты", "Генераторы"),
-    ("https://gorgia.ge/ka/xelsawyoebi/shereva-gazaveba/",                              "Инструменты", "Смешивание"),
+    ("https://gorgia.ge/ka/xelsawyoebi/shereva-gazaveba/",                             "Инструменты", "Смешивание"),
     ("https://gorgia.ge/ka/xelsawyoebi/sawmendi-da-wnevit-sarecxi/",                   "Инструменты", "Уборка и мойка"),
 
     # ── Сад ───────────────────────────────────────────────────────────────────
     ("https://gorgia.ge/ka/aveji/gare-aveji/",                                         "Сад", "Садовая мебель"),
     ("https://gorgia.ge/ka/bagi/auzi-da-wylis-aqsesuarebi/",                           "Сад", "Бассейны"),
     ("https://gorgia.ge/ka/bagi/bagis-xelsawyoebi-da-inventrai/",                      "Сад", "Инструменты"),
-    ("https://gorgia.ge/ka/bagi/inventari-sasmelebistvis/",                             "Сад", "Напитки и пикник"),
+    ("https://gorgia.ge/ka/bagi/inventari-sasmelebistvis/",                            "Сад", "Напитки и пикник"),
     ("https://gorgia.ge/ka/bagi/gobeebi-da-barierebi/",                                "Сад", "Заборы"),
     ("https://gorgia.ge/ka/bagi/sapiknike-inventari/",                                 "Сад", "Пикник"),
     ("https://gorgia.ge/ka/bagi/bagis-dekori-da-aqsesuarebi/",                         "Сад", "Декор"),
@@ -288,8 +290,10 @@ def upload_to_yandex(img_url: str, s3_path: str) -> str:
             ACL="public-read",
         )
 
-        # CDN url: https://cdn.relaxdev.ru/bazariara/gorgia/external_id/0.webp
-        cdn_url = f"{CDN_BASE}/{s3_path.replace(S3_PREFIX + '/', '', 1)}"
+        # Теперь cdn_url формируется просто и надежно:
+        # CDN_BASE: https://cdn.relaxdev.ru
+        # s3_path: bazariara/gorgia/external_id/0.webp
+        cdn_url = f"{CDN_BASE}/{s3_path}"
         return cdn_url
 
     except Exception as e:
@@ -418,10 +422,14 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             if in_stock:
                 for idx, img_url in enumerate(image_urls[:10]):
                     ext = "webp" if "webp" in img_url else "jpg"
-                    # S3 key: bazariara/gorgia/external_id/0.webp
-                    s3_key = f"{S3_PREFIX}/gorgia/{external_id}/{idx}.{ext}"
+                    
+                    # ОПРЕДЕЛЯЕМ ПУТЬ ДЛЯ БАКЕТА
+                    # s3_key будет: bazariara/gorgia/айди_товара/0.webp
+                    s3_key = f"{S3_PREFIX}/{external_id}/{idx}.{ext}"
+                    
                     cdn_url = upload_to_yandex(img_url, s3_key)
                     uploaded.append(cdn_url)
+                    
                     if cdn_url != img_url:
                         photos_uploaded += 1
                     time.sleep(0.3)
