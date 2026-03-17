@@ -13,12 +13,31 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup, NavigableString
 import psycopg2
+import boto3
+from botocore.client import Config
 
-DATABASE_URL      = os.environ["DATABASE_URL"]
-VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "") or os.environ.get("VERCEL_BLOB_TOKEN", "")
-REQUEST_DELAY     = float(os.environ.get("REQUEST_DELAY", "1.5"))
-TG_TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TG_CHAT           = os.environ.get("TELEGRAM_CHAT_ID", "")
+DATABASE_URL       = os.environ["DATABASE_URL"]
+REQUEST_DELAY      = float(os.environ.get("REQUEST_DELAY", "1.5"))
+TG_TOKEN           = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT            = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+YANDEX_ACCESS_KEY  = os.environ.get("YANDEX_ACCESS_KEY_ID", "")
+YANDEX_SECRET_KEY  = os.environ.get("YANDEX_SECRET_ACCESS_KEY", "")
+YANDEX_BUCKET      = os.environ.get("YANDEX_BUCKET_NAME", "izipost")
+YANDEX_REGION      = os.environ.get("YANDEX_REGION", "ru-central1")
+YANDEX_ENDPOINT    = "https://storage.yandexcloud.net"
+S3_PREFIX          = "bazariara"
+CDN_BASE           = "https://cdn.relaxdev.ru/bazariara"
+
+# S3 клиент
+s3_client = boto3.client(
+    "s3",
+    region_name=YANDEX_REGION,
+    endpoint_url=YANDEX_ENDPOINT,
+    aws_access_key_id=YANDEX_ACCESS_KEY,
+    aws_secret_access_key=YANDEX_SECRET_KEY,
+    config=Config(signature_version="s3v4"),
+)
 
 BASE_URL = "https://gorgia.ge"
 HEADERS  = {
@@ -230,7 +249,6 @@ def translate(text: str, target: str = "ru") -> str:
 
 
 def translate_from_ru(text: str, target: str = "en") -> str:
-    """Перевод с русского на другой язык."""
     if not text or not text.strip():
         return ""
     try:
@@ -246,30 +264,37 @@ def translate_from_ru(text: str, target: str = "en") -> str:
     return text
 
 
-def upload_to_blob(img_url: str, blob_path: str) -> str:
-    if not VERCEL_BLOB_TOKEN:
+def upload_to_yandex(img_url: str, s3_path: str) -> str:
+    """
+    Скачивает изображение и загружает в Yandex S3.
+    s3_path — путь внутри бакета, например: bazariara/gorgia/external_id/0.webp
+    Возвращает CDN url или оригинальный img_url при ошибке.
+    """
+    if not YANDEX_ACCESS_KEY or not YANDEX_SECRET_KEY:
         return img_url
     try:
         r = requests.get(img_url, headers=HEADERS, stream=True, timeout=25)
         if r.status_code != 200:
+            print(f"  ⚠️ Не удалось скачать изображение: {r.status_code} {img_url}")
             return img_url
-        ctype = r.headers.get("Content-Type", "image/webp")
-        res = requests.put(
-            f"https://blob.vercel-storage.com/{blob_path}",
-            headers={
-                "Authorization": f"Bearer {VERCEL_BLOB_TOKEN}",
-                "Content-Type": ctype,
-                "x-content-type": ctype,
-            },
-            data=r.content,
-            timeout=40,
+
+        content_type = r.headers.get("Content-Type", "image/webp")
+
+        s3_client.put_object(
+            Bucket=YANDEX_BUCKET,
+            Key=s3_path,
+            Body=r.content,
+            ContentType=content_type,
+            ACL="public-read",
         )
-        if res.status_code in (200, 201):
-            return res.json().get("url", img_url)
-        print(f"  ⚠️ Blob {res.status_code}: {res.text[:100]}")
+
+        # CDN url: https://cdn.relaxdev.ru/bazariara/gorgia/external_id/0.webp
+        cdn_url = f"{CDN_BASE}/{s3_path.replace(S3_PREFIX + '/', '', 1)}"
+        return cdn_url
+
     except Exception as e:
-        print(f"  ❌ Blob: {e}")
-    return img_url
+        print(f"  ❌ Yandex S3 upload error: {e}")
+        return img_url
 
 
 def parse_price(card):
@@ -338,7 +363,6 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
     products = []
     page = 1
 
-    # ── Переводим категорию и подкатегорию один раз для всей категории ───────
     print(f"  🌐 Перевод категории: {category_ru}")
     category_en = translate_from_ru(category_ru, "en")
     category_ka = translate_from_ru(category_ru, "ka")
@@ -376,12 +400,12 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             if not a_tag:
                 continue
 
-            product_url = urllib.parse.urljoin(BASE_URL, a_tag.get("href", ""))
-            name_ka     = a_tag.get_text(strip=True)
-            price       = parse_price(card)
+            product_url  = urllib.parse.urljoin(BASE_URL, a_tag.get("href", ""))
+            name_ka      = a_tag.get_text(strip=True)
+            price        = parse_price(card)
             avail_ka, in_stock = parse_availability(card)
-            image_urls  = get_image_urls(card)
-            external_id = make_external_id(product_url, category_ru)
+            image_urls   = get_image_urls(card)
+            external_id  = make_external_id(product_url, category_ru)
             category_key = external_id.split("_")[0]
 
             name_ru  = translate(name_ka, "ru")
@@ -390,13 +414,15 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
             uploaded = []
             photos_uploaded = 0
+
             if in_stock:
                 for idx, img_url in enumerate(image_urls[:10]):
-                    ext  = "webp" if "webp" in img_url else "jpg"
-                    path = f"gorgia/{external_id}/{idx}.{ext}"
-                    result = upload_to_blob(img_url, path)
-                    uploaded.append(result)
-                    if result != img_url:
+                    ext = "webp" if "webp" in img_url else "jpg"
+                    # S3 key: bazariara/gorgia/external_id/0.webp
+                    s3_key = f"{S3_PREFIX}/gorgia/{external_id}/{idx}.{ext}"
+                    cdn_url = upload_to_yandex(img_url, s3_key)
+                    uploaded.append(cdn_url)
+                    if cdn_url != img_url:
                         photos_uploaded += 1
                     time.sleep(0.3)
             else:
@@ -434,7 +460,7 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             })
 
             flag = "✅" if in_stock else "❌"
-            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото")
+            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото | {photos_uploaded} загружено")
             time.sleep(REQUEST_DELAY)
 
         next_btn = soup.select_one(
@@ -532,7 +558,7 @@ def main():
     print("🚀 Gorgia scraper запущен")
     print(f"📂 Категорий: {len(CATEGORIES)}")
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
-    print(f"🖼  Blob: {'✓' if VERCEL_BLOB_TOKEN else '✗'}\n")
+    print(f"🖼  Yandex S3: {'✓' if YANDEX_ACCESS_KEY else '✗'} | бакет: {YANDEX_BUCKET}\n")
 
     conn = psycopg2.connect(DATABASE_URL)
     done_urls = get_done_urls(conn)
