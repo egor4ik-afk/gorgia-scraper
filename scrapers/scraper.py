@@ -31,36 +31,127 @@ HEADERS  = {
 }
 
 CATEGORIES = [
+    # ── IKEA ──────────────────────────────────────────────────────────────────
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-magidebi-da-merxebi/",   "IKEA", "Столы"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-stulebida-skamebi/",      "IKEA", "Стулья"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-karebiani-satumebi/",     "IKEA", "Шкафы"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",         "IKEA", "Гостиная"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",          "IKEA", "Спальня"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganaTeba/",                           "IKEA", "Освещение"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulosaTvis/",                   "IKEA", "Кухня"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-abazanisaTvis/",                      "IKEA", "Ванная"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saTamaSoebi-da-bavSvTa-aveji/",       "IKEA", "Детская"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-tekstili/",                           "IKEA", "Текстиль"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-dekoracia/",                          "IKEA", "Декор"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicionerebi/",                         "Климатическое оборудование", "Кондиционеры"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-samushao-otaxi/",         "IKEA", "Рабочий кабинет"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganateba/",                           "IKEA", "Освещение"),        # ganaTeba → ganateba
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulo/",                         "IKEA", "Кухня"),            # samzareulosaTvis → samzareulo
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saabazano/",                          "IKEA", "Ванная"),           # abazanisaTvis → saabazano
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-sabavshvo-otaxi/",                    "IKEA", "Детская"),          # saTamaSoebi → sabavshvo-otaxi
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-teqstili/",                           "IKEA", "Текстиль"),         # tekstili → teqstili
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saxlis-dekori/",                      "IKEA", "Декор"),            # dekoracia → saxlis-dekori
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saxlis-movla-da-organizeba/",         "IKEA", "Организация"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-eqsterieri/",                         "IKEA", "Экстерьер"),
+
+    # ── Климатическое оборудование ────────────────────────────────────────────
+    ("https://gorgia.ge/ka/klimaturi-teqnika/centraluri-gatbobis-sistema/",            "Климатическое оборудование", "Центральное отопление"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicioneri/",                           "Климатическое оборудование", "Кондиционеры"),     # kondicionerebi → kondicioneri
+    ("https://gorgia.ge/ka/klimaturi-teqnika/ventilatorebi/",                          "Климатическое оборудование", "Вентиляторы"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamacxeleblebi/",                   "Климатическое оборудование", "Водонагреватели"),  # wylis-gamaTbobeli → wylis-gamacxeleblebi
+    ("https://gorgia.ge/ka/klimaturi-teqnika/gamatboblebi/",                           "Климатическое оборудование", "Обогреватели"),     # gamaTbobeli-aparatebi → gamatboblebi
     ("https://gorgia.ge/ka/klimaturi-teqnika/saventilacio-sistemebi/",                 "Климатическое оборудование", "Вентиляция"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamaTbobeli/",                      "Климатическое оборудование", "Водонагреватели"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/kolektorebi/",                            "Климатическое оборудование", "Коллекторы"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/gamaTbobeli-aparatebi/",                  "Климатическое оборудование", "Обогреватели"),
-    ("https://gorgia.ge/ka/avejis-maRazia/magidebidamerxebi/",                         "Мебель", "Столы"),
-    ("https://gorgia.ge/ka/avejis-maRazia/skrebi/",                                    "Мебель", "Стулья"),
-    ("https://gorgia.ge/ka/avejis-maRazia/vesalkebi/",                                 "Мебель", "Вешалки"),
-    ("https://gorgia.ge/ka/avejis-maRazia/tumbo/",                                     "Мебель", "Тумбочки"),
-    ("https://gorgia.ge/ka/avejis-maRazia/quchis-aveji/",                              "Мебель", "Уличная мебель"),
-    ("https://gorgia.ge/ka/avejis-maRazia/bavSvTa-aveji/",                             "Мебель", "Детская мебель"),
-    ("https://gorgia.ge/ka/ganateba/magidis-naTurebi/",                                "Освещение", "Настольные лампы"),
-    ("https://gorgia.ge/ka/santeknika/smesitelebi/",                                   "Сантехника", "Смесители"),
-    ("https://gorgia.ge/ka/santeknika/rakovina/",                                      "Сантехника", "Раковины"),
-    ("https://gorgia.ge/ka/baRi-da-aivani/",                                           "Сад", ""),
-    ("https://gorgia.ge/ka/turizmi-da-dasveneba/",                                     "Туризм", ""),
-    ("https://gorgia.ge/ka/saTamaSoebi/",                                              "Игрушки", ""),
-    ("https://gorgia.ge/ka/cxovelebisTvis/",                                           "Товары для животных", ""),
-    ("https://gorgia.ge/ka/remonti/keramikuli-filebi/",                                "Плитка", ""),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/koleqtorebi-da-boilerebi/",               "Климатическое оборудование", "Коллекторы"),       # kolektorebi → koleqtorebi-da-boilerebi
+
+    # ── Мебель ────────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/aveji/magidebi-da-merxebi/",                                "Мебель", "Столы"),          # avejis-maRazia → aveji
+    ("https://gorgia.ge/ka/aveji/skamebi/",                                            "Мебель", "Стулья"),
+    ("https://gorgia.ge/ka/aveji/rbili-aveji/",                                        "Мебель", "Мягкая мебель"),
+    ("https://gorgia.ge/ka/aveji/karadebi-da-taroebi/",                                "Мебель", "Шкафы и стеллажи"),
+    ("https://gorgia.ge/ka/aveji/sadzinebeli/",                                        "Мебель", "Спальня"),
+    ("https://gorgia.ge/ka/aveji/samzareulos-aveji/",                                  "Мебель", "Кухонная мебель"),
+    ("https://gorgia.ge/ka/aveji/komodi-da-tumbo/",                                    "Мебель", "Тумбочки"),
+    ("https://gorgia.ge/ka/aveji/gare-aveji/",                                         "Мебель", "Уличная мебель"),
+    ("https://gorgia.ge/ka/aveji/sarke/",                                              "Мебель", "Зеркала"),
+    ("https://gorgia.ge/ka/sabavshvo/sabavshvo-aveji/",                                "Мебель", "Детская мебель"),
+
+    # ── Сантехника ────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/santeqnika/saabazanos-aveji/",                              "Сантехника", "Мебель для ванной"),    # santeknika → santeqnika
+    ("https://gorgia.ge/ka/santeqnika/onkanebi-da-sashxape-sistemebi/",                "Сантехника", "Смесители и душевые"),  # smesitelebi → onkanebi
+    ("https://gorgia.ge/ka/santeqnika/abazana-da-sashxape-kabina/",                    "Сантехника", "Ванны и душевые кабины"),
+    ("https://gorgia.ge/ka/santeqnika/unitazi-da-makompleqteblebi/",                   "Сантехника", "Унитазы"),
+    ("https://gorgia.ge/ka/santeqnika/wyalmomarageba-da-sakanalizacio-sistemebi/",      "Сантехника", "Водоснабжение"),
+    ("https://gorgia.ge/ka/santeqnika/saabazanos-da-tualetis-aqsesuarebi/",            "Сантехника", "Аксессуары"),
+    ("https://gorgia.ge/ka/santeqnika/xelsabani-da-aqsesuarebi/",                      "Сантехника", "Раковины"),             # rakovina → xelsabani
+    ("https://gorgia.ge/ka/santeqnika/bide-da-pisuari/",                               "Сантехника", "Биде"),
+
+    # ── Освещение ─────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/ganateba/shida-ganateba/",                                  "Освещение", "Внутреннее"),
+    ("https://gorgia.ge/ka/ganateba/magidis-sanatebi-da-torsherebi/",                  "Освещение", "Настольные лампы"),      # magidis-naTurebi → magidis-sanatebi-da-torsherebi
+    ("https://gorgia.ge/ka/ganateba/gare-ganateba/",                                   "Освещение", "Уличное"),
+    ("https://gorgia.ge/ka/ganateba/teqnikuri-ganateba/",                              "Освещение", "Техническое"),
+    ("https://gorgia.ge/ka/ganateba/damagrdzeleblebi-da-gadamyvanebi/",                "Освещение", "Удлинители"),
+    ("https://gorgia.ge/ka/ganateba/elementebi-da-batareebi/",                         "Освещение", "Батарейки"),
+
+    # ── Ремонт ────────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/remonti/keramikuli-filebi/",                                "Ремонт", "Плитка"),
+    ("https://gorgia.ge/ka/remonti/kari/",                                             "Ремонт", "Двери"),
+    ("https://gorgia.ge/ka/remonti/iataki/",                                           "Ремонт", "Полы"),
+    ("https://gorgia.ge/ka/remonti/shpaleri-da-penoplastis-karnizebi/",                "Ремонт", "Обои"),
+    ("https://gorgia.ge/ka/remonti/laq-sagebavebi/",                                   "Ремонт", "Краски"),
+    ("https://gorgia.ge/ka/remonti/samontajo-cheri/",                                  "Ремонт", "Потолки"),
+    ("https://gorgia.ge/ka/remonti/fanjara/",                                          "Ремонт", "Окна"),
+
+    # ── Строительство ─────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/mshenebloba/aguri-da-bloki/",                               "Строительство", "Кирпич и блоки"),
+    ("https://gorgia.ge/ka/mshenebloba/saizolacio-masalebi/",                          "Строительство", "Изоляция"),
+    ("https://gorgia.ge/ka/mshenebloba/samsheneblo-fxvnilebi/",                        "Строительство", "Сухие смеси"),
+    ("https://gorgia.ge/ka/mshenebloba/webo-da-sahermetizacio-masalebi/",              "Строительство", "Клеи и герметики"),
+    ("https://gorgia.ge/ka/mshenebloba/saxarji-masala/",                               "Строительство", "Расходные материалы"),
+    ("https://gorgia.ge/ka/mshenebloba/samsheneblo-propili-da-sxva-aqsesuarebi/",      "Строительство", "Строительный профиль"),
+    ("https://gorgia.ge/ka/mshenebloba/saxuravebi-da-fasadis-sistemebi/",              "Строительство", "Кровля и фасады"),
+    ("https://gorgia.ge/ka/mshenebloba/kibis-safexurebi-da-moajirebi/",                "Строительство", "Лестницы"),
+
+    # ── Инструменты ───────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/xelsawyoebi/saxvreti-da-satex-sangrevi/",                   "Инструменты", "Сверление"),
+    ("https://gorgia.ge/ka/xelsawyoebi/saxerxi-da-sachrelebi/",                        "Инструменты", "Пилы и резка"),
+    ("https://gorgia.ge/ka/xelsawyoebi/kibeebi/",                                      "Инструменты", "Лестницы"),
+    ("https://gorgia.ge/ka/xelsawyoebi/shesadugeblebi/",                               "Инструменты", "Сварка"),
+    ("https://gorgia.ge/ka/xelsawyoebi/uniforma-da-usafrtxoeba/",                      "Инструменты", "Спецодежда"),
+    ("https://gorgia.ge/ka/xelsawyoebi/mafiqsireblebi/",                               "Инструменты", "Крепёж"),
+    ("https://gorgia.ge/ka/xelsawyoebi/sazomebi-da-mosanishnebi/",                     "Инструменты", "Измерительные"),
+    ("https://gorgia.ge/ka/xelsawyoebi/salesi/",                                       "Инструменты", "Шлифовка"),
+    ("https://gorgia.ge/ka/xelsawyoebi/saavtomobilo-aqsesuarebi/",                     "Инструменты", "Автоаксессуары"),
+    ("https://gorgia.ge/ka/xelsawyoebi/energiis-da-haeris-warmomqmneli/",              "Инструменты", "Генераторы"),
+    ("https://gorgia.ge/ka/xelsawyoebi/shereva-gazaveba/",                              "Инструменты", "Смешивание"),
+    ("https://gorgia.ge/ka/xelsawyoebi/sawmendi-da-wnevit-sarecxi/",                   "Инструменты", "Уборка и мойка"),
+
+    # ── Сад ───────────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/aveji/gare-aveji/",                                         "Сад", "Садовая мебель"),
+    ("https://gorgia.ge/ka/bagi/auzi-da-wylis-aqsesuarebi/",                           "Сад", "Бассейны"),
+    ("https://gorgia.ge/ka/bagi/bagis-xelsawyoebi-da-inventrai/",                      "Сад", "Инструменты"),
+    ("https://gorgia.ge/ka/bagi/inventari-sasmelebistvis/",                             "Сад", "Напитки и пикник"),
+    ("https://gorgia.ge/ka/bagi/gobeebi-da-barierebi/",                                "Сад", "Заборы"),
+    ("https://gorgia.ge/ka/bagi/sapiknike-inventari/",                                 "Сад", "Пикник"),
+    ("https://gorgia.ge/ka/bagi/bagis-dekori-da-aqsesuarebi/",                         "Сад", "Декор"),
+    ("https://gorgia.ge/ka/bagi/sarwyavi-sistemebi/",                                  "Сад", "Полив"),
+    ("https://gorgia.ge/ka/bagi/bagis-samushao-samosi/",                               "Сад", "Рабочая одежда"),
+    ("https://gorgia.ge/ka/bagi/mcenareebi/",                                          "Сад", "Растения"),
+
+    # ── Техника ───────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/teqnika/samzareulos-wvrili-teqnika/",                       "Техника", "Мелкая кухонная"),
+    ("https://gorgia.ge/ka/teqnika/samzareulos-msxvili-teqnika/",                      "Техника", "Крупная бытовая"),
+    ("https://gorgia.ge/ka/teqnika/teqnika-saxlistvis/",                               "Техника", "Для дома"),
+    ("https://gorgia.ge/ka/teqnika/tavis-movla/",                                      "Техника", "Уход за собой"),
+
+    # ── Дом и быт ─────────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/sayofacxovrebo/churcheli-da-samzareulos-aqsesuarebi/",      "Дом и быт", "Кухонная утварь"),
+    ("https://gorgia.ge/ka/sayofacxovrebo/samzareulo-inventari/tafa-da-qvabi/",        "Дом и быт", "Сковороды и кастрюли"),
+    ("https://gorgia.ge/ka/sayofacxovrebo/samzareulo-inventari/",                      "Дом и быт", "Кухонный инвентарь"),
+    ("https://gorgia.ge/ka/sayofacxovrebo/sayofacxovrebo-movlis-sashualebebi/",        "Дом и быт", "Уход за домом"),
+    ("https://gorgia.ge/ka/sayofacxovrebo/saxlis-dekori/",                             "Дом и быт", "Декор"),
+    ("https://gorgia.ge/ka/sayofacxovrebo/sadgesaswaulo-nivtebi/",                     "Дом и быт", "Праздничные товары"),
+
+    # ── Товары для животных ───────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/cxovelebis-movla/zoo-inventari/",                           "Товары для животных", "Инвентарь"),  # cxovelebisTvis → cxovelebis-movla
+    ("https://gorgia.ge/ka/cxovelebis-movla/sakvebi/",                                 "Товары для животных", "Корм"),
+
+    # ── Детские товары ────────────────────────────────────────────────────────
+    ("https://gorgia.ge/ka/sabavshvo/sabavshvo-aveji/",                                "Детские товары", "Мебель"),
+    ("https://gorgia.ge/ka/sabavshvo/sabavshvo-magidis-sanatebi/",                     "Детские товары", "Лампы"),
 ]
 
 TRANS = {
@@ -71,8 +162,8 @@ TRANS = {
 }
 
 BATCH_SIZE  = 5    # товаров за раз
-BATCH_PAUSE = 10.0 # секунд между батчами
-ITEM_PAUSE  = 2.0  # секунд между товарами
+BATCH_PAUSE = 20.0 # секунд между батчами
+ITEM_PAUSE  = 3.0  # секунд между товарами
 
 
 # ─── YandexGPT ────────────────────────────────────────────────────────────────
@@ -143,6 +234,7 @@ def generate_descriptions(name_ru: str, name_en: str, name_ka: str,
             return {}
 
         # Извлекаем первый JSON объект из ответа
+        print(f"  → ПОЛНЫЙ ОТВЕТ: {repr(text)}")
         match = re.search(r'\{[^{}]*"ru"[^{}]*\}', text, re.DOTALL)
         if not match:
             print("  ⚠️ JSON не найден в ответе")
