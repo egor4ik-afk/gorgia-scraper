@@ -35,26 +35,26 @@ CATEGORIES = [
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-sadzineo-aveji/",         "IKEA", "Гостиная"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-saZinao-aveji/",          "IKEA", "Спальня"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-aveji/ikeas-samushao-otaxi/",         "IKEA", "Рабочий кабинет"),
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganateba/",                           "IKEA", "Освещение"),        # ganaTeba → ganateba
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulo/",                         "IKEA", "Кухня"),            # samzareulosaTvis → samzareulo
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saabazano/",                          "IKEA", "Ванная"),           # abazanisaTvis → saabazano
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-sabavshvo-otaxi/",                    "IKEA", "Детская"),          # saTamaSoebi → sabavshvo-otaxi
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-teqstili/",                           "IKEA", "Текстиль"),         # tekstili → teqstili
-    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saxlis-dekori/",                      "IKEA", "Декор"),            # dekoracia → saxlis-dekori
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-ganateba/",                           "IKEA", "Освещение"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-samzareulo/",                         "IKEA", "Кухня"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saabazano/",                          "IKEA", "Ванная"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-sabavshvo-otaxi/",                    "IKEA", "Детская"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-teqstili/",                           "IKEA", "Текстиль"),
+    ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saxlis-dekori/",                      "IKEA", "Декор"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-saxlis-movla-da-organizeba/",         "IKEA", "Организация"),
     ("https://gorgia.ge/ka/ikeas-produqcia/ikeas-eqsterieri/",                         "IKEA", "Экстерьер"),
 
     # ── Климатическое оборудование ────────────────────────────────────────────
     ("https://gorgia.ge/ka/klimaturi-teqnika/centraluri-gatbobis-sistema/",            "Климатическое оборудование", "Центральное отопление"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicioneri/",                           "Климатическое оборудование", "Кондиционеры"),     # kondicionerebi → kondicioneri
+    ("https://gorgia.ge/ka/klimaturi-teqnika/kondicioneri/",                           "Климатическое оборудование", "Кондиционеры"),
     ("https://gorgia.ge/ka/klimaturi-teqnika/ventilatorebi/",                          "Климатическое оборудование", "Вентиляторы"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamacxeleblebi/",                   "Климатическое оборудование", "Водонагреватели"),  # wylis-gamaTbobeli → wylis-gamacxeleblebi
-    ("https://gorgia.ge/ka/klimaturi-teqnika/gamatboblebi/",                           "Климатическое оборудование", "Обогреватели"),     # gamaTbobeli-aparatebi → gamatboblebi
+    ("https://gorgia.ge/ka/klimaturi-teqnika/wylis-gamacxeleblebi/",                   "Климатическое оборудование", "Водонагреватели"),
+    ("https://gorgia.ge/ka/klimaturi-teqnika/gamatboblebi/",                           "Климатическое оборудование", "Обогреватели"),
     ("https://gorgia.ge/ka/klimaturi-teqnika/saventilacio-sistemebi/",                 "Климатическое оборудование", "Вентиляция"),
-    ("https://gorgia.ge/ka/klimaturi-teqnika/koleqtorebi-da-boilerebi/",               "Климатическое оборудование", "Коллекторы"),       # kolektorebi → koleqtorebi-da-boilerebi
+    ("https://gorgia.ge/ka/klimaturi-teqnika/koleqtorebi-da-boilerebi/",               "Климатическое оборудование", "Коллекторы"),
 
     # ── Мебель ────────────────────────────────────────────────────────────────
-    ("https://gorgia.ge/ka/aveji/magidebi-da-merxebi/",                                "Мебель", "Столы"),          # avejis-maRazia → aveji
+    ("https://gorgia.ge/ka/aveji/magidebi-da-merxebi/",                                "Мебель", "Столы"),
     ("https://gorgia.ge/ka/aveji/skamebi/",                                            "Мебель", "Стулья"),
     ("https://gorgia.ge/ka/aveji/rbili-aveji/",                                        "Мебель", "Мягкая мебель"),
     ("https://gorgia.ge/ka/aveji/karadebi-da-taroebi/",                                "Мебель", "Шкафы и стеллажи"),
@@ -66,18 +66,18 @@ CATEGORIES = [
     ("https://gorgia.ge/ka/sabavshvo/sabavshvo-aveji/",                                "Мебель", "Детская мебель"),
 
     # ── Сантехника ────────────────────────────────────────────────────────────
-    ("https://gorgia.ge/ka/santeqnika/saabazanos-aveji/",                              "Сантехника", "Мебель для ванной"),    # santeknika → santeqnika
-    ("https://gorgia.ge/ka/santeqnika/onkanebi-da-sashxape-sistemebi/",                "Сантехника", "Смесители и душевые"),  # smesitelebi → onkanebi
+    ("https://gorgia.ge/ka/santeqnika/saabazanos-aveji/",                              "Сантехника", "Мебель для ванной"),
+    ("https://gorgia.ge/ka/santeqnika/onkanebi-da-sashxape-sistemebi/",                "Сантехника", "Смесители и душевые"),
     ("https://gorgia.ge/ka/santeqnika/abazana-da-sashxape-kabina/",                    "Сантехника", "Ванны и душевые кабины"),
     ("https://gorgia.ge/ka/santeqnika/unitazi-da-makompleqteblebi/",                   "Сантехника", "Унитазы"),
     ("https://gorgia.ge/ka/santeqnika/wyalmomarageba-da-sakanalizacio-sistemebi/",      "Сантехника", "Водоснабжение"),
     ("https://gorgia.ge/ka/santeqnika/saabazanos-da-tualetis-aqsesuarebi/",            "Сантехника", "Аксессуары"),
-    ("https://gorgia.ge/ka/santeqnika/xelsabani-da-aqsesuarebi/",                      "Сантехника", "Раковины"),             # rakovina → xelsabani
+    ("https://gorgia.ge/ka/santeqnika/xelsabani-da-aqsesuarebi/",                      "Сантехника", "Раковины"),
     ("https://gorgia.ge/ka/santeqnika/bide-da-pisuari/",                               "Сантехника", "Биде"),
 
     # ── Освещение ─────────────────────────────────────────────────────────────
     ("https://gorgia.ge/ka/ganateba/shida-ganateba/",                                  "Освещение", "Внутреннее"),
-    ("https://gorgia.ge/ka/ganateba/magidis-sanatebi-da-torsherebi/",                  "Освещение", "Настольные лампы"),      # magidis-naTurebi → magidis-sanatebi-da-torsherebi
+    ("https://gorgia.ge/ka/ganateba/magidis-sanatebi-da-torsherebi/",                  "Освещение", "Настольные лампы"),
     ("https://gorgia.ge/ka/ganateba/gare-ganateba/",                                   "Освещение", "Уличное"),
     ("https://gorgia.ge/ka/ganateba/teqnikuri-ganateba/",                              "Освещение", "Техническое"),
     ("https://gorgia.ge/ka/ganateba/damagrdzeleblebi-da-gadamyvanebi/",                "Освещение", "Удлинители"),
@@ -143,7 +143,7 @@ CATEGORIES = [
     ("https://gorgia.ge/ka/sayofacxovrebo/sadgesaswaulo-nivtebi/",                     "Дом и быт", "Праздничные товары"),
 
     # ── Товары для животных ───────────────────────────────────────────────────
-    ("https://gorgia.ge/ka/cxovelebis-movla/zoo-inventari/",                           "Товары для животных", "Инвентарь"),  # cxovelebisTvis → cxovelebis-movla
+    ("https://gorgia.ge/ka/cxovelebis-movla/zoo-inventari/",                           "Товары для животных", "Инвентарь"),
     ("https://gorgia.ge/ka/cxovelebis-movla/sakvebi/",                                 "Товары для животных", "Корм"),
 
     # ── Детские товары ────────────────────────────────────────────────────────
@@ -158,9 +158,9 @@ TRANS = {
     'щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
 }
 
-BATCH_SIZE  = 5    # товаров за раз
-BATCH_PAUSE = 20.0 # секунд между батчами
-ITEM_PAUSE  = 3.0  # секунд между товарами
+BATCH_SIZE  = 5
+BATCH_PAUSE = 20.0
+ITEM_PAUSE  = 3.0
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -226,6 +226,23 @@ def translate(text: str, target: str = "ru") -> str:
             return "".join(t[0] for t in r.json()[0] if t[0])
     except Exception as e:
         print(f"  ⚠️ translate({target}): {e}")
+    return text
+
+
+def translate_from_ru(text: str, target: str = "en") -> str:
+    """Перевод с русского на другой язык."""
+    if not text or not text.strip():
+        return ""
+    try:
+        r = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "ru", "tl": target, "dt": "t", "q": text},
+            timeout=12,
+        )
+        if r.status_code == 200:
+            return "".join(t[0] for t in r.json()[0] if t[0])
+    except Exception as e:
+        print(f"  ⚠️ translate_from_ru({target}): {e}")
     return text
 
 
@@ -321,6 +338,24 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
     products = []
     page = 1
 
+    # ── Переводим категорию и подкатегорию один раз для всей категории ───────
+    print(f"  🌐 Перевод категории: {category_ru}")
+    category_en = translate_from_ru(category_ru, "en")
+    category_ka = translate_from_ru(category_ru, "ka")
+    time.sleep(0.5)
+
+    sub_category_en = ""
+    sub_category_ka = ""
+    if sub_category_ru:
+        print(f"  🌐 Перевод подкатегории: {sub_category_ru}")
+        sub_category_en = translate_from_ru(sub_category_ru, "en")
+        sub_category_ka = translate_from_ru(sub_category_ru, "ka")
+        time.sleep(0.5)
+
+    print(f"  📌 {category_ru} → en: {category_en} | ka: {category_ka}")
+    if sub_category_ru:
+        print(f"  📌 {sub_category_ru} → en: {sub_category_en} | ka: {sub_category_ka}")
+
     while True:
         url = cat_url if page == 1 else f"{cat_url}?page={page}"
         print(f"\n  📄 Страница {page}: {url}")
@@ -368,29 +403,33 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 uploaded = image_urls
 
             products.append({
-                "external_id":     external_id,
-                "category_key":    category_key,
-                "source":          "gorgia",
-                "source_url":      product_url,
-                "name":            name_ru or name_ka,
-                "name_ka":         name_ka,
-                "name_ru":         name_ru,
-                "name_en":         name_en,
-                "description":     "",
-                "description_ru":  "",
-                "description_en":  "",
-                "description_ka":  "",
-                "availability_ka": avail_ka,
-                "availability_ru": avail_ru,
-                "category":        category_ru,
-                "category_ru":     category_ru,
-                "sub_category":    sub_category_ru,
-                "sub_category_ru": sub_category_ru,
-                "price":           price,
-                "currency":        "GEL",
-                "in_stock":        in_stock,
-                "image_url":       uploaded[0] if uploaded else None,
-                "images":          json.dumps(uploaded),
+                "external_id":      external_id,
+                "category_key":     category_key,
+                "source":           "gorgia",
+                "source_url":       product_url,
+                "name":             name_ru or name_ka,
+                "name_ka":          name_ka,
+                "name_ru":          name_ru,
+                "name_en":          name_en,
+                "description":      "",
+                "description_ru":   "",
+                "description_en":   "",
+                "description_ka":   "",
+                "availability_ka":  avail_ka,
+                "availability_ru":  avail_ru,
+                "category":         category_ru,
+                "category_ru":      category_ru,
+                "category_en":      category_en,
+                "category_ka":      category_ka,
+                "sub_category":     sub_category_ru,
+                "sub_category_ru":  sub_category_ru,
+                "sub_category_en":  sub_category_en,
+                "sub_category_ka":  sub_category_ka,
+                "price":            price,
+                "currency":         "GEL",
+                "in_stock":         in_stock,
+                "image_url":        uploaded[0] if uploaded else None,
+                "images":           json.dumps(uploaded),
                 "_photos_uploaded": photos_uploaded,
             })
 
@@ -432,14 +471,18 @@ def upsert_product(conn, p: dict):
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE products SET
-                    price           = %(price)s,
-                    in_stock        = %(in_stock)s,
-                    availability_ka = %(availability_ka)s,
-                    availability_ru = %(availability_ru)s,
-                    image_url       = COALESCE(%(image_url)s, image_url),
-                    images          = COALESCE(%(images)s::jsonb, images),
-                    category_key    = COALESCE(%(category_key)s, category_key),
-                    updated_at      = NOW()
+                    price            = %(price)s,
+                    in_stock         = %(in_stock)s,
+                    availability_ka  = %(availability_ka)s,
+                    availability_ru  = %(availability_ru)s,
+                    image_url        = COALESCE(%(image_url)s, image_url),
+                    images           = COALESCE(%(images)s::jsonb, images),
+                    category_key     = COALESCE(%(category_key)s, category_key),
+                    category_en      = COALESCE(%(category_en)s, category_en),
+                    category_ka      = COALESCE(%(category_ka)s, category_ka),
+                    sub_category_en  = COALESCE(%(sub_category_en)s, sub_category_en),
+                    sub_category_ka  = COALESCE(%(sub_category_ka)s, sub_category_ka),
+                    updated_at       = NOW()
                 WHERE external_id = %(external_id)s AND source = 'gorgia'
             """, p_clean)
     else:
@@ -450,8 +493,8 @@ def upsert_product(conn, p: dict):
                     name, name_ka, name_ru, name_en,
                     description, description_ru, description_en, description_ka,
                     availability_ka, availability_ru,
-                    category, category_ru,
-                    sub_category, sub_category_ru,
+                    category, category_ru, category_en, category_ka,
+                    sub_category, sub_category_ru, sub_category_en, sub_category_ka,
                     price, currency, in_stock,
                     image_url, images
                 ) VALUES (
@@ -459,8 +502,8 @@ def upsert_product(conn, p: dict):
                     %(name)s, %(name_ka)s, %(name_ru)s, %(name_en)s,
                     %(description)s, %(description_ru)s, %(description_en)s, %(description_ka)s,
                     %(availability_ka)s, %(availability_ru)s,
-                    %(category)s, %(category_ru)s,
-                    %(sub_category)s, %(sub_category_ru)s,
+                    %(category)s, %(category_ru)s, %(category_en)s, %(category_ka)s,
+                    %(sub_category)s, %(sub_category_ru)s, %(sub_category_en)s, %(sub_category_ka)s,
                     %(price)s, %(currency)s, %(in_stock)s,
                     %(image_url)s, %(images)s::jsonb
                 )
