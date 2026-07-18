@@ -346,8 +346,14 @@ def get_image_urls(card):
             seen.add(u)
 
     img = card.select_one(".ut2-gl__image img")
-    if img and img.get("src"):
-        add(to_webp(img["src"]))
+    if img:
+        # Предпочитаем 2x-вариант из srcset — он уже в нужном формате (webp/jpg),
+        # каким его отдаёт сам сайт. Строковых догадок про путь больше не делаем.
+        srcset = img.get("srcset", "")
+        if srcset:
+            add(srcset.split(",")[0].strip().split(" ")[0])
+        elif img.get("src"):
+            add(img["src"])
 
     for item in card.select(".item[data-ca-product-additional-image-src]"):
         srcset = item.get("data-ca-product-additional-image-srcset", "")
@@ -482,6 +488,18 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
 # ─── DB ───────────────────────────────────────────────────────────────────────
 
+def get_db_connection():
+    """Соединение с keepalive — чтобы NAT/фаервол/Neon не рвали простаивающий сокет молча."""
+    return psycopg2.connect(
+        DATABASE_URL,
+        connect_timeout=15,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+    )
+
+
 def get_done_urls(conn) -> set:
     with conn.cursor() as cur:
         cur.execute("SELECT source_url FROM products WHERE source = 'gorgia' AND source_url IS NOT NULL")
@@ -543,9 +561,27 @@ def upsert_product(conn, p: dict):
 
 def save_products(products: list, done_urls: set, conn):
     new = upd = photos = 0
-    for p in products:
+    total = len(products)
+    for i, p in enumerate(products, start=1):
         exists = p["source_url"] in done_urls
-        upsert_product(conn, p)
+
+        for attempt in range(3):
+            try:
+                upsert_product(conn, p)
+                break
+            except psycopg2.OperationalError as e:
+                print(f"  ⚠️ БД оборвалась на {i}/{total} ({p.get('name','?')[:40]}): {e}. "
+                      f"Переподключаюсь ({attempt + 1}/3)…")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                time.sleep(2 * (attempt + 1))
+                conn = get_db_connection()
+        else:
+            print(f"  ❌ Не удалось сохранить после 3 попыток: {p.get('source_url')}")
+            continue
+
         done_urls.add(p["source_url"])
         photos += p.get("_photos_uploaded", 0)
         if exists:
@@ -565,7 +601,7 @@ def main():
     print(f"🖼  Yandex S3: {'✓' if YANDEX_ACCESS_KEY else '✗'} | бакет: {YANDEX_BUCKET}\n")
 
     # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = get_db_connection()
     done_urls = get_done_urls(conn)
     conn.close()
     
@@ -579,7 +615,7 @@ def main():
         products = scrape_category(cat_url, category_ru, sub_category_ru)
 
         # 2. Открыли БД заново ТОЛЬКО для сохранения партии товаров
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db_connection()
         new, upd, photos = save_products(products, done_urls, conn)
         conn.close() # Сохранили и снова закрыли
 
@@ -613,7 +649,7 @@ def main_single():
         return
 
     # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = get_db_connection()
     done_urls = get_done_urls(conn)
     conn.close()
 
@@ -631,7 +667,7 @@ def main_single():
             products = scrape_category(url, cat, sub_cat)
             
             # 2. Снова открываем только для сохранения
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = get_db_connection()
             new, upd, photos = save_products(products, done_urls, conn)
             conn.close()
             
@@ -643,7 +679,7 @@ def main_single():
         products = scrape_category(cat_url, category, sub)
         
         # 2. Снова открываем только для сохранения
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db_connection()
         total_new, total_upd, total_photos = save_products(products, done_urls, conn)
         conn.close()
 
