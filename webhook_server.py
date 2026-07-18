@@ -16,7 +16,6 @@ import hmac
 import json
 import logging
 import os
-import signal
 import subprocess
 from datetime import datetime
 from aiohttp import web
@@ -26,7 +25,6 @@ logger = logging.getLogger("webhook")
 
 SECRET = os.environ.get("SCRAPER_WEBHOOK_SECRET", "")
 PORT   = int(os.environ.get("WEBHOOK_PORT", "8080"))
-RUN_TIMEOUT_SECONDS = int(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "2700"))  # 45 минут по умолчанию
 
 status = {
     "update":          {"last_run": None, "status": "idle", "pid": None},
@@ -41,100 +39,33 @@ def verify(request: web.Request) -> bool:
     return hmac.compare_digest(request.headers.get("X-Secret", ""), SECRET)
 
 
-def is_pid_alive(pid) -> bool:
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def is_actually_running(action: str) -> bool:
-    """Статус 'running' сам по себе не гарантия — процесс мог умереть, не дописав статус
-    (OOM, SIGKILL, зависший readline). Проверяем, жив ли реально PID."""
-    entry = status[action]
-    if entry["status"] != "running":
-        return False
-    if is_pid_alive(entry.get("pid")):
-        return True
-    # PID мёртв, а статус остался "running" — самоисцеляемся
-    logger.warning(f"[{action}] Статус завис на 'running', но PID {entry.get('pid')} не жив — сбрасываю")
-    entry["status"] = "error"
-    entry["pid"] = None
-    return False
-
-
-async def _run_and_stream(action: str, cmd: list, env: dict, label: str = ""):
-    """Запускает команду и логирует её stdout построчно, в реальном времени —
-    а не одним куском в конце (иначе прогресс скрапера не виден, пока он не закончит)."""
+async def run_cmd(action: str, cmd: list, label: str = ""):
     status[action]["status"]   = "running"
     status[action]["last_run"] = datetime.now().isoformat()
     if label:
         status[action]["label"] = label
     logger.info(f"[{action}] {' '.join(cmd)}" + (f" | {label}" if label else ""))
 
-    tail_lines = []  # последние строки — покажем их, если упадёт с ошибкой
-    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd="/app",
-            env=env,
         )
         status[action]["pid"] = proc.pid
-
-        async def _read_all():
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                text = line.decode(errors="replace").rstrip("\n")
-                if text.strip():
-                    logger.info(f"[{action}] {text}")
-                    tail_lines.append(text)
-                    if len(tail_lines) > 30:
-                        tail_lines.pop(0)
-
-        try:
-            await asyncio.wait_for(_read_all(), timeout=RUN_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
-            logger.error(f"[{action}] Таймаут {RUN_TIMEOUT_SECONDS}с — процесс не ответил, убиваю (pid {proc.pid})")
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
-            status[action]["status"] = "error"
-            return
-
-        returncode = await proc.wait()
-
-        if returncode == 0:
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0:
             status[action]["status"] = "done"
-            logger.info(f"[{action}] Готово: {label}")
+            logger.info(f"[{action}] Завершено успешно")
         else:
             status[action]["status"] = "error"
-            logger.error(f"[{action}] Ошибка (код {returncode}): " + " | ".join(tail_lines[-10:]))
+            logger.error(f"[{action}] Ошибка (код {proc.returncode}): {stdout.decode()[-500:]}")
     except Exception as e:
         status[action]["status"] = "error"
         logger.exception(f"[{action}] Исключение: {e}")
-        if proc is not None:
-            try:
-                proc.kill()
-            except Exception:
-                pass
     finally:
         status[action]["pid"] = None
-
-
-async def run_cmd(action: str, cmd: list, label: str = ""):
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    await _run_and_stream(action, cmd, env, label=label)
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -142,7 +73,7 @@ async def run_cmd(action: str, cmd: list, label: str = ""):
 async def handle_update(req: web.Request) -> web.Response:
     if not verify(req):
         return web.json_response({"error": "Unauthorized"}, status=401)
-    if is_actually_running("update"):
+    if status["update"]["status"] == "running":
         return web.json_response({"ok": False, "message": "Уже запущен"}, status=409)
     asyncio.create_task(run_cmd("update", ["python", "main.py", "--update"]))
     return web.json_response({"ok": True, "message": "Апдейт запущен"})
@@ -151,7 +82,7 @@ async def handle_update(req: web.Request) -> web.Response:
 async def handle_scrape(req: web.Request) -> web.Response:
     if not verify(req):
         return web.json_response({"error": "Unauthorized"}, status=401)
-    if is_actually_running("scrape"):
+    if status["scrape"]["status"] == "running":
         return web.json_response({"ok": False, "message": "Уже запущен"}, status=409)
     asyncio.create_task(run_cmd("scrape", ["python", "main.py"]))
     return web.json_response({"ok": True, "message": "Полный парсинг запущен"})
@@ -160,7 +91,7 @@ async def handle_scrape(req: web.Request) -> web.Response:
 async def handle_scrape_category(req: web.Request) -> web.Response:
     if not verify(req):
         return web.json_response({"error": "Unauthorized"}, status=401)
-    if is_actually_running("scrape_category"):
+    if status["scrape_category"]["status"] == "running":
         return web.json_response({"ok": False, "message": "Уже запущена другая категория"}, status=409)
 
     try:
@@ -172,7 +103,6 @@ async def handle_scrape_category(req: web.Request) -> web.Response:
     category    = body.get("category", "")
     sub_category = body.get("sub_category", "")
 
-    # Передаём через переменные окружения чтобы не экранировать в аргументах
     env_extra = {
         "SCRAPE_URL":      cat_url,
         "SCRAPE_CATEGORY": category,
@@ -181,7 +111,6 @@ async def handle_scrape_category(req: web.Request) -> web.Response:
 
     label = f"{category} / {sub_category}" if sub_category else category or cat_url
 
-    # Запускаем отдельный скрипт для одной категории
     asyncio.create_task(
         run_cmd_with_env(
             "scrape_category",
@@ -194,42 +123,42 @@ async def handle_scrape_category(req: web.Request) -> web.Response:
 
 
 async def run_cmd_with_env(action: str, cmd: list, extra_env: dict, label: str = ""):
-    """Запускает команду с дополнительными переменными окружения (потоковый вывод)."""
+    """Запускает команду с дополнительными переменными окружения."""
     env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
     env.update(extra_env)
-    await _run_and_stream(action, cmd, env, label=label)
+
+    status[action]["status"]   = "running"
+    status[action]["last_run"] = datetime.now().isoformat()
+    status[action]["label"]    = label
+    logger.info(f"[{action}] {' '.join(cmd)} | {label}")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd="/app",
+            env=env,
+        )
+        status[action]["pid"] = proc.pid
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0:
+            status[action]["status"] = "done"
+            logger.info(f"[{action}] Готово: {label}")
+        else:
+            status[action]["status"] = "error"
+            logger.error(f"[{action}] Ошибка: {stdout.decode()[-500:]}")
+    except Exception as e:
+        status[action]["status"] = "error"
+        logger.exception(f"[{action}] {e}")
+    finally:
+        status[action]["pid"] = None
 
 
 async def handle_status(req: web.Request) -> web.Response:
     if not verify(req):
         return web.json_response({"error": "Unauthorized"}, status=401)
     return web.json_response(status)
-
-
-async def handle_reset(req: web.Request) -> web.Response:
-    """Форс-сброс зависшего статуса вручную: POST /webhook/reset {"action": "scrape_category"}"""
-    if not verify(req):
-        return web.json_response({"error": "Unauthorized"}, status=401)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    action = body.get("action")
-    if action not in status:
-        return web.json_response({"error": f"action должен быть один из {list(status.keys())}"}, status=400)
-
-    pid = status[action].get("pid")
-    if pid and is_pid_alive(pid):
-        try:
-            os.kill(pid, signal.SIGKILL)
-            logger.warning(f"[{action}] Принудительно убил pid {pid} по запросу reset")
-        except Exception as e:
-            logger.warning(f"[{action}] Не удалось убить pid {pid}: {e}")
-
-    status[action]["status"] = "idle"
-    status[action]["pid"] = None
-    return web.json_response({"ok": True, "action": action, "status": status[action]})
 
 
 async def handle_health(_: web.Request) -> web.Response:
@@ -244,7 +173,6 @@ def make_app():
     app.router.add_post("/webhook/scrape",           handle_scrape)
     app.router.add_post("/webhook/scrape-category",  handle_scrape_category)
     app.router.add_get( "/webhook/status",           handle_status)
-    app.router.add_post("/webhook/reset",            handle_reset)
     app.router.add_get( "/health",                   handle_health)
     return app
 
