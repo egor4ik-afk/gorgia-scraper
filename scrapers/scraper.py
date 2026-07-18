@@ -250,17 +250,51 @@ def resolve_category_keys(conn, category_names) -> dict:
     return result
 
 
-def tg_notify(text: str):
+BAZARIARA_LOG_URL    = os.environ.get("BAZARIARA_LOG_URL", "")     # напр. https://bazariara.ge/api/admin/scrape-log
+BAZARIARA_LOG_SECRET = os.environ.get("BAZARIARA_LOG_SECRET", "")
+
+
+def tg_notify(text: str) -> bool:
     if not TG_TOKEN or not TG_CHAT:
-        return
+        print("  ⚠️ Telegram: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID не заданы — уведомление не отправлено", flush=True)
+        return False
     try:
-        requests.post(
+        res = requests.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
             json={"chat_id": TG_CHAT, "text": text, "parse_mode": "Markdown"},
             timeout=10,
         )
+        if res.status_code == 200:
+            print("  ✅ Telegram: уведомление отправлено", flush=True)
+            return True
+        print(f"  ✕ Telegram: HTTP {res.status_code}: {res.text[:300]}", flush=True)
+        return False
     except Exception as e:
-        print(f"  ⚠️ Telegram: {e}")
+        print(f"  ✕ Telegram: {e}", flush=True)
+        return False
+
+
+def bazariara_notify(payload: dict) -> bool:
+    """Второй, независимый от Telegram канал — пишет итог парсинга напрямую в bazariara.
+    Работает, даже если бот молчит/заблокирован/не настроен."""
+    if not BAZARIARA_LOG_URL:
+        print("  ⚠️ Bazariara log: BAZARIARA_LOG_URL не задан — пропускаю", flush=True)
+        return False
+    try:
+        res = requests.post(
+            BAZARIARA_LOG_URL,
+            json=payload,
+            headers={"X-Scraper-Secret": BAZARIARA_LOG_SECRET, "Content-Type": "application/json"},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            print("  ✅ Bazariara log: записано", flush=True)
+            return True
+        print(f"  ✕ Bazariara log: HTTP {res.status_code}: {res.text[:300]}", flush=True)
+        return False
+    except Exception as e:
+        print(f"  ✕ Bazariara log: {e}", flush=True)
+        return False
 
 
 def to_webp(url: str) -> str:
@@ -753,8 +787,17 @@ def main():
         f"✏️ Обновлено: *{total_upd}*\n"
         f"🖼 Фото загружено: *{total_photos}*"
     )
-    print(f"\n{'='*60}\n{msg}\n{'='*60}")
+    print(f"\n{'='*60}\n{msg}\n{'='*60}", flush=True)
     tg_notify(msg)
+    bazariara_notify({
+        "label": "Полный парсинг",
+        "elapsed_seconds": elapsed,
+        "total": total,
+        "new": total_new,
+        "updated": total_upd,
+        "photos": total_photos,
+        "ok": True,
+    })
 
 
 def main_single():
@@ -820,8 +863,17 @@ def main_single():
         f"✏️ Обновлено: *{total_upd}*\n"
         f"🖼 Фото загружено: *{total_photos}*"
     )
-    print(msg)
+    print(msg, flush=True)
     tg_notify(msg)
+    bazariara_notify({
+        "label": label,
+        "elapsed_seconds": elapsed,
+        "total": total,
+        "new": total_new,
+        "updated": total_upd,
+        "photos": total_photos,
+        "ok": True,
+    })
 
 
 if __name__ == "__main__":
