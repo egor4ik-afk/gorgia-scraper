@@ -186,12 +186,49 @@ ITEM_PAUSE  = 3.0
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def make_external_id(url: str, category_ru: str) -> str:
-    slug = category_ru.lower()
-    slug = ''.join(TRANS.get(c, c) for c in slug)
-    slug = re.sub(r'[^a-z0-9]', '', slug)
+def make_external_id(url: str, category_key: str) -> str:
+    slug = re.sub(r'[^a-z0-9]', '', category_key.lower())
     num  = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
     return f"{slug}_{num}"
+
+
+def slugify_ru(category_ru: str) -> str:
+    """Транслитерация RU → ключ. Используется ТОЛЬКО когда категории ещё нет в БД."""
+    slug = category_ru.lower()
+    slug = ''.join(TRANS.get(c, c) for c in slug)
+    return re.sub(r'[^a-z0-9]', '', slug)
+
+
+def resolve_category_keys(conn, category_names) -> dict:
+    """
+    Смотрим, какой category_key УЖЕ используется в БД для каждой русской категории —
+    чтобы не плодить дубликаты вроде climate / klimaticheskoeoborudovanie.
+    Если категории ещё нет — создаём новый ключ транслитерацией (как раньше делал make_external_id).
+    """
+    category_names = {c for c in category_names if c}
+    result = {}
+    if category_names:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT category, category_key, COUNT(*) AS cnt
+                FROM products
+                WHERE category = ANY(%s) AND category_key IS NOT NULL
+                GROUP BY category, category_key
+                ORDER BY category, cnt DESC
+            """, [list(category_names)])
+            for category, key, _cnt in cur.fetchall():
+                if category not in result:  # берём самый частый существующий ключ на категорию
+                    result[category] = key
+
+    for name in category_names:
+        if name not in result:
+            slug = slugify_ru(name)
+            result[name] = slug
+            print(f"  🆕 Категории «{name}» ещё нет в БД → создаю новый ключ '{slug}'", flush=True)
+        else:
+            print(f"  🔗 «{name}» → существующий ключ '{result[name]}'", flush=True)
+
+    return result
 
 
 def tg_notify(text: str):
@@ -372,7 +409,7 @@ def get_image_urls(card):
 STALL_SECONDS = 20  # если один товар обрабатывается дольше — печатаем предупреждение
 
 
-def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list:
+def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str, category_key: str) -> list:
     products = []
     page = 1
     processed = 0
@@ -422,8 +459,7 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
             price        = parse_price(card)
             avail_ka, in_stock = parse_availability(card)
             image_urls   = get_image_urls(card)
-            external_id  = make_external_id(product_url, category_ru)
-            category_key = external_id.split("_")[0]
+            external_id  = make_external_id(product_url, category_key)
 
             name_ru  = translate(name_ka, "ru")
             name_en  = translate(name_ka, "en")
@@ -623,9 +659,10 @@ def main():
     print(f"🗄  DB: {DATABASE_URL[:40]}…")
     print(f"🖼  Yandex S3: {'✓' if YANDEX_ACCESS_KEY else '✗'} | бакет: {YANDEX_BUCKET}\n")
 
-    # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
+    # 1. Открыли БД, получили ссылки + канонические category_key, СРАЗУ ЗАКРЫЛИ
     conn = get_db_connection()
     done_urls = get_done_urls(conn)
+    category_keys = resolve_category_keys(conn, {c for _, c, _ in CATEGORIES})
     conn.close()
     
     total_new = total_upd = total_photos = 0
@@ -635,7 +672,7 @@ def main():
         print(f"\n{'='*60}\n📁 {label}\n{'='*60}")
 
         # Парсинг занимает много времени, БД пока отдыхает
-        products = scrape_category(cat_url, category_ru, sub_category_ru)
+        products = scrape_category(cat_url, category_ru, sub_category_ru, category_keys[category_ru])
 
         # 2. Открыли БД заново ТОЛЬКО для сохранения партии товаров
         conn = get_db_connection()
@@ -671,10 +708,9 @@ def main_single():
         print("Ошибка: нужен SCRAPE_URL или SCRAPE_CATEGORY")
         return
 
-    # 1. Открыли БД, получили ссылки и СРАЗУ ЗАКРЫЛИ
+    # 1. Открыли БД, получили ссылки + канонические category_key
     conn = get_db_connection()
     done_urls = get_done_urls(conn)
-    conn.close()
 
     total_new = total_upd = total_photos = 0
     label = f"{category} / {sub}" if sub else category or cat_url
@@ -683,11 +719,16 @@ def main_single():
         matches = [(u, c, s) for u, c, s in CATEGORIES
                    if c == category and (not sub or s == sub)]
         if not matches:
+            conn.close()
             print(f"Категория не найдена: {category} / {sub}")
             return
+
+        category_keys = resolve_category_keys(conn, {c for _, c, _ in matches})
+        conn.close()
+
         for url, cat, sub_cat in matches:
             print(f"\nПарсим: {cat} / {sub_cat}")
-            products = scrape_category(url, cat, sub_cat)
+            products = scrape_category(url, cat, sub_cat, category_keys[cat])
             
             # 2. Снова открываем только для сохранения
             conn = get_db_connection()
@@ -698,8 +739,12 @@ def main_single():
             total_upd += upd
             total_photos += photos
     else:
+        category_keys = resolve_category_keys(conn, {category} if category else set())
+        conn.close()
+        resolved_key = category_keys.get(category) if category else slugify_ru(cat_url)
+
         print(f"\nПарсим: {label} | {cat_url}")
-        products = scrape_category(cat_url, category, sub)
+        products = scrape_category(cat_url, category, sub, resolved_key)
         
         # 2. Снова открываем только для сохранения
         conn = get_db_connection()
