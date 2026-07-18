@@ -201,25 +201,44 @@ def slugify_ru(category_ru: str) -> str:
 
 def resolve_category_keys(conn, category_names) -> dict:
     """
-    Смотрим, какой category_key УЖЕ используется в БД для каждой русской категории —
-    чтобы не плодить дубликаты вроде climate / klimaticheskoeoborudovanie.
-    Если категории ещё нет — создаём новый ключ транслитерацией (как раньше делал make_external_id).
+    Приоритет при определении category_key:
+      1. Каноническая таблица categories (единственный источник правды для меню/фильтров сайта) —
+         точное совпадение по названию.
+      2. Если категории там нет — самый частый существующий category_key в products
+         (на случай если товары уже есть, а строка в categories почему-то не создана).
+      3. Если категории нет вообще нигде — новый ключ транслитерацией.
+    Так не плодим дубли вроде climate / klimaticheskoeoborudovanie и не подхватываем
+    случайно расплодившийся "неправильный" ключ, даже если его в products вдруг стало больше.
     """
     category_names = {c for c in category_names if c}
     result = {}
+
     if category_names:
         with conn.cursor() as cur:
+            # 1. Каноническая таблица
             cur.execute("""
-                SELECT category, category_key, COUNT(*) AS cnt
-                FROM products
-                WHERE category = ANY(%s) AND category_key IS NOT NULL
-                GROUP BY category, category_key
-                ORDER BY category, cnt DESC
+                SELECT name, category_key FROM categories WHERE name = ANY(%s)
             """, [list(category_names)])
-            for category, key, _cnt in cur.fetchall():
-                if category not in result:  # берём самый частый существующий ключ на категорию
-                    result[category] = key
+            for name, key in cur.fetchall():
+                result[name] = key
 
+            # 2. Фолбэк на products — только для того, чего не нашли в categories
+            remaining = category_names - set(result.keys())
+            if remaining:
+                cur.execute("""
+                    SELECT category, category_key, COUNT(*) AS cnt
+                    FROM products
+                    WHERE category = ANY(%s) AND category_key IS NOT NULL
+                    GROUP BY category, category_key
+                    ORDER BY category, cnt DESC
+                """, [list(remaining)])
+                for category, key, _cnt in cur.fetchall():
+                    if category not in result:
+                        result[category] = key
+                        print(f"  ⚠️ «{category}» есть в products, но не в таблице categories — "
+                              f"беру ключ '{key}' по частоте (стоит завести строку в categories)", flush=True)
+
+    # 3. Реально новые категории
     for name in category_names:
         if name not in result:
             slug = slugify_ru(name)
@@ -409,6 +428,43 @@ def get_image_urls(card):
 STALL_SECONDS = 20  # если один товар обрабатывается дольше — печатаем предупреждение
 
 
+def ensure_category_registered(category_key: str, category_ru: str, category_en: str, category_ka: str,
+                                sub_category_ru: str, sub_category_en: str, sub_category_ka: str):
+    """
+    Регистрирует категорию/подкатегорию в канонических таблицах categories/subcategories,
+    если их там ещё нет — иначе они не появятся в меню и фильтрах сайта, даже если у товаров
+    поля category/sub_category уже заполнены правильно.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO categories (category_key, name, name_en, name_ka)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (category_key) DO NOTHING
+                RETURNING category_key
+            """, [category_key, category_ru, category_en, category_ka])
+            if cur.fetchone():
+                print(f"  🆕 Зарегистрирована категория в таблице categories: {category_ru} [{category_key}]", flush=True)
+
+            if sub_category_ru:
+                sub_key = slugify_ru(sub_category_ru)
+                cur.execute("""
+                    INSERT INTO subcategories (category_key, key, name, name_en, name_ka)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (key) DO NOTHING
+                    RETURNING key
+                """, [category_key, sub_key, sub_category_ru, sub_category_en, sub_category_ka])
+                if cur.fetchone():
+                    print(f"  🆕 Зарегистрирована подкатегория в таблице subcategories: {sub_category_ru} [{sub_key}]", flush=True)
+        conn.commit()
+    except Exception as e:
+        print(f"  ⚠️ Не удалось зарегистрировать категорию/подкатегорию в БД: {e}", flush=True)
+        conn.rollback()
+    finally:
+        conn.close()
+
+
 def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str, category_key: str) -> list:
     products = []
     page = 1
@@ -431,6 +487,9 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str, catego
     print(f"  📌 {category_ru} → en: {category_en} | ka: {category_ka}", flush=True)
     if sub_category_ru:
         print(f"  📌 {sub_category_ru} → en: {sub_category_en} | ka: {sub_category_ka}", flush=True)
+
+    ensure_category_registered(category_key, category_ru, category_en, category_ka,
+                                sub_category_ru, sub_category_en, sub_category_ka)
 
     while True:
         url = cat_url if page == 1 else f"{cat_url}?page={page}"
