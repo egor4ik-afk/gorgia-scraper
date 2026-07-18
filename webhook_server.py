@@ -39,33 +39,56 @@ def verify(request: web.Request) -> bool:
     return hmac.compare_digest(request.headers.get("X-Secret", ""), SECRET)
 
 
-async def run_cmd(action: str, cmd: list, label: str = ""):
+async def _run_and_stream(action: str, cmd: list, env: dict, label: str = ""):
+    """Запускает команду и логирует её stdout построчно, в реальном времени —
+    а не одним куском в конце (иначе прогресс скрапера не виден, пока он не закончит)."""
     status[action]["status"]   = "running"
     status[action]["last_run"] = datetime.now().isoformat()
     if label:
         status[action]["label"] = label
     logger.info(f"[{action}] {' '.join(cmd)}" + (f" | {label}" if label else ""))
 
+    tail_lines = []  # последние строки — покажем их, если упадёт с ошибкой
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd="/app",
+            env=env,
         )
         status[action]["pid"] = proc.pid
-        stdout, _ = await proc.communicate()
-        if proc.returncode == 0:
+
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            text = line.decode(errors="replace").rstrip("\n")
+            if text.strip():
+                logger.info(f"[{action}] {text}")
+                tail_lines.append(text)
+                if len(tail_lines) > 30:
+                    tail_lines.pop(0)
+
+        returncode = await proc.wait()
+
+        if returncode == 0:
             status[action]["status"] = "done"
-            logger.info(f"[{action}] Завершено успешно")
+            logger.info(f"[{action}] Готово: {label}")
         else:
             status[action]["status"] = "error"
-            logger.error(f"[{action}] Ошибка (код {proc.returncode}): {stdout.decode()[-500:]}")
+            logger.error(f"[{action}] Ошибка (код {returncode}): " + " | ".join(tail_lines[-10:]))
     except Exception as e:
         status[action]["status"] = "error"
         logger.exception(f"[{action}] Исключение: {e}")
     finally:
         status[action]["pid"] = None
+
+
+async def run_cmd(action: str, cmd: list, label: str = ""):
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    await _run_and_stream(action, cmd, env, label=label)
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -125,37 +148,11 @@ async def handle_scrape_category(req: web.Request) -> web.Response:
 
 
 async def run_cmd_with_env(action: str, cmd: list, extra_env: dict, label: str = ""):
-    """Запускает команду с дополнительными переменными окружения."""
-    import os as _os
-    env = _os.environ.copy()
+    """Запускает команду с дополнительными переменными окружения (потоковый вывод)."""
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     env.update(extra_env)
-
-    status[action]["status"]   = "running"
-    status[action]["last_run"] = datetime.now().isoformat()
-    status[action]["label"]    = label
-    logger.info(f"[{action}] {' '.join(cmd)} | {label}")
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd="/app",
-            env=env,
-        )
-        status[action]["pid"] = proc.pid
-        stdout, _ = await proc.communicate()
-        if proc.returncode == 0:
-            status[action]["status"] = "done"
-            logger.info(f"[{action}] Готово: {label}")
-        else:
-            status[action]["status"] = "error"
-            logger.error(f"[{action}] Ошибка: {stdout.decode()[-500:]}")
-    except Exception as e:
-        status[action]["status"] = "error"
-        logger.exception(f"[{action}] {e}")
-    finally:
-        status[action]["pid"] = None
+    await _run_and_stream(action, cmd, env, label=label)
 
 
 async def handle_status(req: web.Request) -> web.Response:

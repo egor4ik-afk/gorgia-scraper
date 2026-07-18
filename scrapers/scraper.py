@@ -369,11 +369,16 @@ def get_image_urls(card):
 
 # ─── Scraper ──────────────────────────────────────────────────────────────────
 
+STALL_SECONDS = 20  # если один товар обрабатывается дольше — печатаем предупреждение
+
+
 def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> list:
     products = []
     page = 1
+    processed = 0
+    t_start = time.time()
 
-    print(f"  🌐 Перевод категории: {category_ru}")
+    print(f"  🌐 Перевод категории: {category_ru}", flush=True)
     category_en = translate_from_ru(category_ru, "en")
     category_ka = translate_from_ru(category_ru, "ka")
     time.sleep(0.5)
@@ -381,18 +386,18 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
     sub_category_en = ""
     sub_category_ka = ""
     if sub_category_ru:
-        print(f"  🌐 Перевод подкатегории: {sub_category_ru}")
+        print(f"  🌐 Перевод подкатегории: {sub_category_ru}", flush=True)
         sub_category_en = translate_from_ru(sub_category_ru, "en")
         sub_category_ka = translate_from_ru(sub_category_ru, "ka")
         time.sleep(0.5)
 
-    print(f"  📌 {category_ru} → en: {category_en} | ka: {category_ka}")
+    print(f"  📌 {category_ru} → en: {category_en} | ka: {category_ka}", flush=True)
     if sub_category_ru:
-        print(f"  📌 {sub_category_ru} → en: {sub_category_en} | ka: {sub_category_ka}")
+        print(f"  📌 {sub_category_ru} → en: {sub_category_en} | ka: {sub_category_ka}", flush=True)
 
     while True:
         url = cat_url if page == 1 else f"{cat_url}?page={page}"
-        print(f"\n  📄 Страница {page}: {url}")
+        print(f"\n  📄 Страница {page}: {url}", flush=True)
 
         soup = get_soup(url)
         if not soup:
@@ -400,15 +405,17 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
 
         cards = soup.select(".ut2-gl__body")
         if not cards:
-            print(f"  ℹ️ Товаров не найдено, стоп")
+            print(f"  ℹ️ Товаров не найдено, стоп", flush=True)
             break
 
-        print(f"  → {len(cards)} товаров")
+        print(f"  → {len(cards)} товаров", flush=True)
 
         for card in cards:
             a_tag = card.select_one(".ut2-gl__name a")
             if not a_tag:
                 continue
+
+            t_item = time.time()
 
             product_url  = urllib.parse.urljoin(BASE_URL, a_tag.get("href", ""))
             name_ka      = a_tag.get_text(strip=True)
@@ -470,8 +477,24 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str) -> lis
                 "_photos_uploaded": photos_uploaded,
             })
 
+            item_elapsed = time.time() - t_item
+            processed += 1
+
             flag = "✅" if in_stock else "❌"
-            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото | {photos_uploaded} загружено")
+            print(f"    {flag} {name_ru[:50]} | {price} ₾ | {len(uploaded)} фото | "
+                  f"{photos_uploaded} загружено | {item_elapsed:.1f}с", flush=True)
+
+            if item_elapsed > STALL_SECONDS:
+                print(f"    ⚠️ Долго обрабатывался ({item_elapsed:.0f}с > {STALL_SECONDS}с): "
+                      f"{name_ru[:60]} — проверь сеть/картинки/перевод", flush=True)
+
+            if processed % 5 == 0:
+                total_elapsed = time.time() - t_start
+                rate = total_elapsed / processed
+                print(f"  📊 Прогресс: {processed} товаров обработано | "
+                      f"прошло {int(total_elapsed // 60)}м {int(total_elapsed % 60)}с | "
+                      f"~{rate:.1f}с/товар", flush=True)
+
             time.sleep(REQUEST_DELAY)
 
         next_btn = soup.select_one(
