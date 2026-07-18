@@ -186,10 +186,14 @@ ITEM_PAUSE  = 3.0
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def make_external_id(url: str, category_key: str) -> str:
-    slug = re.sub(r'[^a-z0-9]', '', category_key.lower())
-    num  = int(hashlib.md5(url.encode()).hexdigest()[:8], 16) % 90000 + 10000
-    return f"{slug}_{num}"
+def make_external_id(url: str, category_key: str = "") -> str:
+    # ВАЖНО: category_key сюда больше не подмешивается. Раньше external_id включал
+    # префикс категории, из-за чего смена category_key (мердж/переименование) меняла
+    # external_id для того же самого товара -> upsert_product не находил "старую" строку
+    # по external_id и вставлял дубликат вместо обновления. source_url — единственный
+    # стабильный идентификатор товара на gorgia.ge, category_key участвовать не должен.
+    h = hashlib.md5(url.encode()).hexdigest()[:12]
+    return f"gorgia_{h}"
 
 
 def slugify_ru(category_ru: str) -> str:
@@ -663,8 +667,8 @@ def upsert_product(conn, p: dict):
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM products WHERE external_id = %s AND source = 'gorgia'",
-            [p_clean["external_id"]]
+            "SELECT id FROM products WHERE source_url = %s AND source = 'gorgia'",
+            [p_clean["source_url"]]
         )
         existing = cur.fetchone()
 
@@ -672,18 +676,21 @@ def upsert_product(conn, p: dict):
         with conn.cursor() as cur:
             cur.execute("""
                 UPDATE products SET
+                    external_id      = %(external_id)s,
                     price            = %(price)s,
                     in_stock         = %(in_stock)s,
                     availability     = %(availability)s,
                     image_url        = COALESCE(%(image_url)s, image_url),
                     images           = COALESCE(%(images)s::jsonb, images),
-                    category_key     = COALESCE(%(category_key)s, category_key),
+                    category_key     = %(category_key)s,
+                    category         = %(category)s,
                     category_en      = COALESCE(%(category_en)s, category_en),
                     category_ka      = COALESCE(%(category_ka)s, category_ka),
+                    sub_category     = %(sub_category)s,
                     sub_category_en  = COALESCE(%(sub_category_en)s, sub_category_en),
                     sub_category_ka  = COALESCE(%(sub_category_ka)s, sub_category_ka),
                     updated_at       = NOW()
-                WHERE external_id = %(external_id)s AND source = 'gorgia'
+                WHERE source_url = %(source_url)s AND source = 'gorgia'
             """, p_clean)
     else:
         with conn.cursor() as cur:
