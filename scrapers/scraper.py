@@ -197,10 +197,18 @@ def make_external_id(url: str, category_key: str = "") -> str:
 
 
 def slugify_ru(category_ru: str) -> str:
-    """Транслитерация RU → ключ. Используется ТОЛЬКО когда категории ещё нет в БД."""
+    """Транслитерация RU → ключ (латиница). Используется ТОЛЬКО для НОВЫХ категорий,
+    которых ещё нет в БД (существующие category_key вроде climate/furniture — англ. слова)."""
     slug = category_ru.lower()
     slug = ''.join(TRANS.get(c, c) for c in slug)
     return re.sub(r'[^a-z0-9]', '', slug)
+
+
+def slugify_sub(sub_category_ru: str) -> str:
+    """Ключ подкатегории — НЕ транслитерация, а кириллица в нижнем регистре с дефисами
+    (см. существующие 'коллекторы-и-бойлеры', 'центральное-отопление'). Если сгенерить
+    иначе — получится дубль с другим ключом на то же самое имя (как было с konditsionery)."""
+    return sub_category_ru.strip().lower().replace(" ", "-")
 
 
 def resolve_category_keys(conn, category_names) -> dict:
@@ -459,15 +467,21 @@ def ensure_category_registered(category_key: str, category_ru: str, category_en:
                 print(f"  🆕 Зарегистрирована категория в таблице categories: {category_ru} [{category_key}]", flush=True)
 
             if sub_category_ru:
-                sub_key = slugify_ru(sub_category_ru)
-                cur.execute("""
-                    INSERT INTO subcategories (category_key, key, name, name_en, name_ka)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (key) DO NOTHING
-                    RETURNING key
-                """, [category_key, sub_key, sub_category_ru, sub_category_en, sub_category_ka])
-                if cur.fetchone():
-                    print(f"  🆕 Зарегистрирована подкатегория в таблице subcategories: {sub_category_ru} [{sub_key}]", flush=True)
+                cur.execute(
+                    "SELECT key FROM subcategories WHERE category_key = %s AND name = %s LIMIT 1",
+                    [category_key, sub_category_ru]
+                )
+                already = cur.fetchone()
+                if not already:
+                    sub_key = slugify_sub(sub_category_ru)
+                    cur.execute("""
+                        INSERT INTO subcategories (category_key, key, name, name_en, name_ka)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (key) DO NOTHING
+                        RETURNING key
+                    """, [category_key, sub_key, sub_category_ru, sub_category_en, sub_category_ka])
+                    if cur.fetchone():
+                        print(f"  🆕 Зарегистрирована подкатегория в таблице subcategories: {sub_category_ru} [{sub_key}]", flush=True)
         conn.commit()
     except Exception as e:
         print(f"  ⚠️ Не удалось зарегистрировать категорию/подкатегорию в БД: {e}", flush=True)
