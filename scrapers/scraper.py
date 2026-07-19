@@ -187,13 +187,13 @@ ITEM_PAUSE  = 3.0
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def make_external_id(url: str, category_key: str = "") -> str:
-    # ВАЖНО: category_key сюда больше не подмешивается. Раньше external_id включал
-    # префикс категории, из-за чего смена category_key (мердж/переименование) меняла
-    # external_id для того же самого товара -> upsert_product не находил "старую" строку
-    # по external_id и вставлял дубликат вместо обновления. source_url — единственный
-    # стабильный идентификатор товара на gorgia.ge, category_key участвовать не должен.
+    # category_key снова используется для читаемости слага (climate_a1b2c3...).
+    # Дублей это больше не создаёт: upsert_product матчит "уже есть товар или нет"
+    # по source_url, а не по external_id — так что при смене категории слаг просто
+    # обновится на актуальный при следующем прогоне, а не создаст вторую строку.
+    prefix = re.sub(r'[^a-z0-9]', '', category_key.lower()) if category_key else "gorgia"
     h = hashlib.md5(url.encode()).hexdigest()[:12]
-    return f"gorgia_{h}"
+    return f"{prefix}_{h}"
 
 
 def slugify_ru(category_ru: str) -> str:
@@ -477,7 +477,7 @@ def ensure_category_registered(category_key: str, category_ru: str, category_en:
                     cur.execute("""
                         INSERT INTO subcategories (category_key, key, name, name_en, name_ka)
                         VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (key) DO NOTHING
+                        ON CONFLICT (category_key, key) DO NOTHING
                         RETURNING key
                     """, [category_key, sub_key, sub_category_ru, sub_category_en, sub_category_ka])
                     if cur.fetchone():
@@ -625,25 +625,6 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str, catego
 
         page += 1
         time.sleep(REQUEST_DELAY)
-
-    # Если у подкатегории в канонической таблице ещё нет превью — подставляем
-    # фото первого же спарсенного товара, чтобы не было битой картинки на сайте.
-    if sub_category_ru and products:
-        first_image = next((p["image_url"] for p in products if p.get("image_url")), None)
-        if first_image:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        UPDATE subcategories SET image_url = %s
-                        WHERE category_key = %s AND name = %s AND image_url IS NULL
-                    """, [first_image, category_key, sub_category_ru])
-                conn.commit()
-            except Exception as e:
-                print(f"  ⚠️ Не удалось подставить фото подкатегории: {e}", flush=True)
-                conn.rollback()
-            finally:
-                conn.close()
 
     return products
 
