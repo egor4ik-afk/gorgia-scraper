@@ -67,7 +67,7 @@ async def run_cmd(action: str, cmd: list, label: str = ""):
 
         if proc.returncode == 0:
             status[action]["status"] = "done"
-            logger.info(f"[{action}] Завершено успешно")
+            logger.info(f"[{action}] Завершено успешно:\n" + stdout.decode(errors="replace")[-1500:])
         else:
             status[action]["status"] = "error"
             logger.error(f"[{action}] Ошибка (код {proc.returncode}): {stdout.decode()[-500:]}")
@@ -163,7 +163,7 @@ async def run_cmd_with_env(action: str, cmd: list, extra_env: dict, label: str =
 
         if proc.returncode == 0:
             status[action]["status"] = "done"
-            logger.info(f"[{action}] Готово: {label}")
+            logger.info(f"[{action}] Готово: {label}\n" + stdout.decode(errors="replace")[-1500:])
         else:
             status[action]["status"] = "error"
             logger.error(f"[{action}] Ошибка: {stdout.decode()[-500:]}")
