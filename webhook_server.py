@@ -23,8 +23,9 @@ from aiohttp import web
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("webhook")
 
-SECRET = os.environ.get("SCRAPER_WEBHOOK_SECRET", "")
-PORT   = int(os.environ.get("WEBHOOK_PORT", "8080"))
+SECRET  = os.environ.get("SCRAPER_WEBHOOK_SECRET", "")
+PORT    = int(os.environ.get("WEBHOOK_PORT", "8080"))
+TIMEOUT = int(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "2700"))  # 45 минут — просто потолок, чтобы не висело вечно
 
 status = {
     "update":          {"last_run": None, "status": "idle", "pid": None},
@@ -54,7 +55,16 @@ async def run_cmd(action: str, cmd: list, label: str = ""):
             cwd="/app",
         )
         status[action]["pid"] = proc.pid
-        stdout, _ = await proc.communicate()
+
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.error(f"[{action}] Не ответил за {TIMEOUT}с — убиваю процесс (pid {proc.pid})")
+            proc.kill()
+            await proc.wait()
+            status[action]["status"] = "error"
+            return
+
         if proc.returncode == 0:
             status[action]["status"] = "done"
             logger.info(f"[{action}] Завершено успешно")
@@ -141,7 +151,16 @@ async def run_cmd_with_env(action: str, cmd: list, extra_env: dict, label: str =
             env=env,
         )
         status[action]["pid"] = proc.pid
-        stdout, _ = await proc.communicate()
+
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.error(f"[{action}] Не ответил за {TIMEOUT}с — убиваю процесс (pid {proc.pid})")
+            proc.kill()
+            await proc.wait()
+            status[action]["status"] = "error"
+            return
+
         if proc.returncode == 0:
             status[action]["status"] = "done"
             logger.info(f"[{action}] Готово: {label}")

@@ -626,6 +626,25 @@ def scrape_category(cat_url: str, category_ru: str, sub_category_ru: str, catego
         page += 1
         time.sleep(REQUEST_DELAY)
 
+    # Если у подкатегории в канонической таблице ещё нет превью — подставляем
+    # фото первого же спарсенного товара, чтобы не было битой картинки на сайте.
+    if sub_category_ru and products:
+        first_image = next((p["image_url"] for p in products if p.get("image_url")), None)
+        if first_image:
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE subcategories SET image_url = %s
+                        WHERE category_key = %s AND name = %s AND image_url IS NULL
+                    """, [first_image, category_key, sub_category_ru])
+                conn.commit()
+            except Exception as e:
+                print(f"  ⚠️ Не удалось подставить фото подкатегории: {e}", flush=True)
+                conn.rollback()
+            finally:
+                conn.close()
+
     return products
 
 
